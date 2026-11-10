@@ -64,7 +64,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         message = null
     }
 
-    fun setWifiOnly(enabled: Boolean) {
+    fun updateWifiOnly(enabled: Boolean) {
         wifiOnly = enabled
         repository.wifiOnly = enabled
     }
