@@ -3,6 +3,7 @@ package com.videox.app.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -87,6 +88,49 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        Text("Dark theme", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Dark is the default VideoX look. Turn off for a light theme.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = viewModel.darkTheme,
+                        onCheckedChange = { viewModel.updateDarkTheme(it) }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Simultaneous downloads: ${viewModel.maxConcurrent}", fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 2, 3).forEach { n ->
+                        OutlinedButton(onClick = { viewModel.updateMaxConcurrent(n) }) {
+                            Text(if (viewModel.maxConcurrent == n) "● $n" else "$n")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "yt-dlp engine: ${if (viewModel.ytdlpReady) "ready" else "starting…"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Wi-Fi only", fontWeight = FontWeight.SemiBold)
                         Text(
                             "When on, downloads will not use mobile data.",
@@ -135,10 +179,10 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("About VideoX", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Version 1.0  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
+                Text("Version 2.0  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "VideoX downloads only direct video links (MP4, WebM, MOV, M4V, 3GP) from sources that permit downloading, using Android DownloadManager. It does not bypass DRM, paywalls or logins, and never collects passwords.",
+                    "VideoX 2.0 downloads supported-site links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct video links (MP4, WebM, MOV, M4V, 3GP) with Android DownloadManager. It does not bypass DRM, paywalls or logins, and never collects passwords.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
