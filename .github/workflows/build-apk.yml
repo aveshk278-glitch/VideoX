@@ -25,9 +25,10 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # NOTE: ubuntu-latest already has the Android SDK pre-installed,
+      # so no separate SDK setup step is needed. The old
+      # android-actions/setup-android step was removed because it tried
+      # to install the obsolete "tools" package and failed the run.
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v3
         with:
