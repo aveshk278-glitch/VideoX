@@ -20,7 +20,15 @@ data class DownloadItem(
     val downloadedBytes: Long = 0L,
     val downloadId: Long = -1L,
     val createdAt: Long = System.currentTimeMillis(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    /** VIDEO or AUDIO. */
+    val mode: String = "VIDEO",
+    /** Human-readable format label chosen by the user, e.g. "Video • 720p • mp4". */
+    val formatLabel: String? = null,
+    /** yt-dlp process id, used to cancel a running download. Null for direct downloads. */
+    val processId: String? = null,
+    /** "DIRECT" (DownloadManager) or "YTDLP". */
+    val engine: String = "DIRECT"
 ) {
     val isRunning: Boolean
         get() = status == "QUEUED" || status == "RUNNING" || status == "PAUSED"
