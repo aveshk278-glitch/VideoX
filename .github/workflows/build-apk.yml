@@ -41,10 +41,13 @@ jobs:
         # repository. The gradlew script is still in the repo for local use.
         run: gradle assembleDebug --stacktrace
 
+      # ABI splits are enabled (arm64-v8a + armeabi-v7a) because yt-dlp +
+      # FFmpeg native libraries are large; each split APK is one ABI only.
+      # The artifact therefore contains two APKs — most phones use arm64-v8a.
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/
           if-no-files-found: error
           retention-days: 30
