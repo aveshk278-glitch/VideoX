@@ -33,7 +33,22 @@ interface DownloadDao {
         error: String?
     )
 
-    @Query("SELECT * FROM downloads WHERE downloadId = :downloadId LIMIT 1")
+    @Query(
+        "UPDATE downloads SET status = :status, progress = :progress, " +
+            "downloadedBytes = :downloaded, totalBytes = :total, errorMessage = :error " +
+            "WHERE id = :id"
+    )
+    suspend fun updateProgressById(
+        id: Long,
+        status: String,
+        progress: Int,
+        downloaded: Long,
+        total: Long,
+        error: String?
+    )
+
+    @Query("UPDATE downloads SET status = :status, progress = :progress, errorMessage = :error WHERE id = :id")
+    suspend fun updateStatusById(id: Long, status: String, progress: Int, error: String?)
     suspend fun getByDownloadId(downloadId: Long): DownloadItem?
 
     @Query("SELECT * FROM downloads WHERE status IN ('QUEUED', 'RUNNING', 'PAUSED')")
