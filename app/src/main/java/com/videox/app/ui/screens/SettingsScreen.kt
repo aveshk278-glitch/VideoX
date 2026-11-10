@@ -96,7 +96,7 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                     }
                     Switch(
                         checked = viewModel.wifiOnly,
-                        onCheckedChange = { viewModel.setWifiOnly(it) }
+                        onCheckedChange = { viewModel.updateWifiOnly(it) }
                     )
                 }
             }
