@@ -1,6 +1,5 @@
 package com.videox.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -37,10 +36,8 @@ fun VideoXTheme(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    // VideoX is designed dark-first; the system setting is respected only
-    // when the caller does not force dark. MainActivity passes darkTheme = true.
-    val useDark = if (darkTheme) true else isSystemInDarkTheme()
-    val colorScheme = if (useDark) DarkColorScheme else LightColorScheme
+    // darkTheme is the user's setting (default dark). It directly selects the scheme.
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
