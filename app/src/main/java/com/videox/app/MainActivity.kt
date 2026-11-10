@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            VideoXTheme(darkTheme = true) {
+            VideoXTheme(darkTheme = viewModel.darkTheme) {
                 VideoXApp(viewModel)
             }
         }
