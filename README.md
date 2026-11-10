@@ -1,1 +1,170 @@
-# VideoX
+# VideoX — Android Video Downloader
+
+VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**.
+It downloads **direct video file links** (MP4, WebM, MOV, M4V, 3GP) using Android
+`DownloadManager`, so downloads keep working in the background and resume
+after interruptions when the server allows it.
+
+- **App name:** VideoX
+- **Package:** `com.videox.app`
+- **Min. Android:** Android 10 (API 29)
+- **Target / Compile SDK:** 34
+- **Language:** Kotlin 2.0.20, AGP 8.5.2, Gradle 8.7, Java 17
+- **Download folder:** `Downloads/VideoX` on the phone
+
+> **Important — what VideoX does and does not do**
+>
+> VideoX supports only direct downloadable video URLs and sources that
+> explicitly permit downloading. It uses official Android APIs and
+> authorised download links. It does **not** bypass DRM, paywalls, login
+> restrictions or platform download protections, and it does **not** claim
+> that every social-media URL can be downloaded. It never collects
+> passwords or private account information. If a link is a web page, a
+> protected stream, or a DRM-protected video, VideoX will show a clear
+> error instead of downloading it.
+
+## Features
+
+- Dark theme with purple + blue accents
+- Home: URL input, **Paste URL** and **Download** buttons
+- Live progress, status and file size (where the server provides it)
+- Downloads tab: All / Running / Completed / Failed filters
+- Download history saved in Room, with **Clear history** (files are not deleted)
+- Settings: Wi-Fi-only toggle, download folder, storage summary, About
+- URL validation with clear error messages
+- Handles no-internet, failed and paused downloads, and shows the reason
+
+## Project structure
+
+```
+VideoX/
+├── README.md
+├── settings.gradle.kts
+├── build.gradle.kts
+├── gradle.properties
+├── gradle/wrapper/gradle-wrapper.properties
+├── gradlew
+├── gradlew.bat
+├── .github/workflows/build-apk.yml
+└── app/
+    ├── build.gradle.kts
+    ├── proguard-rules.pro
+    └── src/main/
+        ├── AndroidManifest.xml
+        ├── java/com/videox/app/
+        │   ├── MainActivity.kt
+        │   ├── VideoXApp.kt
+        │   ├── data/
+        │   │   ├── AppDatabase.kt
+        │   │   ├── DownloadDao.kt
+        │   │   ├── DownloadItem.kt
+        │   │   └── DownloadRepository.kt
+        │   ├── download/
+        │   │   └── DownloadManagerHelper.kt
+        │   └── ui/
+        │       ├── theme/Color.kt, Theme.kt, Type.kt
+        │       ├── viewmodel/DownloaderViewModel.kt
+        │       └── screens/HomeScreen.kt, DownloadsScreen.kt, SettingsScreen.kt
+        └── res/
+            ├── values/strings.xml, colors.xml, themes.xml
+            ├── drawable/ic_launcher_foreground.xml, ic_launcher_background.xml
+            ├── mipmap-anydpi-v26/ic_launcher.xml, ic_launcher_round.xml
+            └── xml/backup_rules.xml, data_extraction_rules.xml
+```
+
+## How to use VideoX (in the app)
+
+1. Copy a direct video link, e.g. `https://example.com/video.mp4`
+2. Open VideoX, tap **Paste URL**, then **Download**.
+3. Watch progress on Home. Completed videos are in the **Downloads** tab
+   and in the phone's **Files > Downloads > VideoX**.
+4. Tap a completed video to play it.
+
+## Build the APK using only an Android phone — step by step
+
+You do **not** need a computer. GitHub builds the APK for you.
+
+### Step 1 — Get a GitHub account
+
+1. On your phone, open Chrome and go to https://github.com
+2. Sign up / sign in. A free account is enough.
+
+### Step 2 — Create a repository
+
+1. Tap **+** (top right) → **New repository**.
+2. Repository name: `VideoX`
+3. Choose **Public** (or Private — Actions works on both for this workflow).
+4. Tap **Create repository**. Do **not** add a README, .gitignore or licence here — the ZIP already has them.
+
+### Step 3 — Upload the project ZIP from your phone
+
+1. Download `VideoX.zip` from this chat to your phone.
+2. Unzip it if needed — you need the **folder** `VideoX` with files inside.
+   - On many phones the Files app can unzip. If not, install the free
+     **ZArchiver** app from Google Play, open the ZIP in it and Extract.
+3. On GitHub, open your new `VideoX` repository → tap **Add file → Upload files**.
+4. Tap **Choose your files**, select **all files and folders inside** the
+   `VideoX` folder — including the hidden `.github` folder if your file
+   picker shows it. If `.github` is not visible in the picker:
+   - Upload everything else first and commit, then on GitHub tap
+     **Add file → Create new file**, type `.github/workflows/build-apk.yml`
+     as the name, paste the contents of that file from the ZIP, and commit.
+   - The workflow file **must** be at exactly
+     `.github/workflows/build-apk.yml` or no build will run.
+5. Tap **Commit changes**. Wait for the upload to finish.
+
+> Tip: uploading from the GitHub **mobile app** does not support full-folder
+> upload well. Use **Chrome in Desktop mode** if the picker hides folders:
+> Chrome menu → Desktop site, then upload again.
+
+### Step 4 — Let GitHub Actions build it
+
+1. After the push to `main`, GitHub automatically starts the workflow
+   **“Build VideoX APK”**.
+2. Go to the **Actions** tab in your repository. You should see a run
+   named “Build VideoX APK” / “Build debug APK”.
+3. Wait 3–8 minutes for it to turn green (✓). If it is red, tap the run,
+   tap the failed step, and read the error log.
+
+**Manual build:** Actions tab → **Build VideoX APK** (left side) →
+**Run workflow** → choose `main` → **Run workflow**.
+
+### Step 5 — Download the APK artifact
+
+1. In the green (successful) run, scroll down to **Artifacts**.
+2. Tap **app-debug-apk**. A ZIP file downloads to your phone.
+3. Unzip that artifact ZIP (Files app or ZArchiver). Inside is
+   **`app-debug.apk`**.
+
+### Step 6 — Install the APK on Android
+
+1. Open **Files** → **Downloads** → tap `app-debug.apk`.
+2. If Android asks, allow **Install unknown apps** for the app you are
+   installing from (Chrome / Files). This is normal for APKs not from
+   Google Play.
+3. Tap **Install**, then **Open**.
+4. On first run, allow the notification permission — DownloadManager
+   uses it to tell you when a download finishes. No storage permission
+   is needed on Android 10+ for `Downloads/VideoX`.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| No run in Actions | Check the workflow is at `.github/workflows/build-apk.yml` on the `main` branch, and that Actions is enabled in Settings → Actions → General. |
+| Build fails: `gradlew: Permission denied` | The workflow already runs `chmod +x gradlew`. If you edited the file, re-upload the original `gradlew`. |
+| Build fails: SDK / Java error | Do not change Java 17 or AGP 8.5.2 in the workflow / Gradle files. Those versions are matched. |
+| “Only direct video file links are supported” | The link is a web page, not a file ending `.mp4` / `.webm` / `.mov` / `.m4v` / `.3gp`. Use the direct file link from a source that permits downloading. |
+| Download failed / paused | Check internet, storage space, and that the server allows the download. Tap the same link again from Home to retry. |
+| Can't find the video | Files app → Downloads → VideoX. Clearing history in VideoX does not delete files. |
+
+## Build status — please read
+
+This project was **not built or tested on a local device in this chat**.
+The first real build happens in GitHub Actions when you push to `main`.
+If that first build is green and the APK installs, the project is verified
+for your phone. Do not treat this README as proof that an APK was built.
+
+## Licence
+
+For personal use. Only download videos you have the right to download.
