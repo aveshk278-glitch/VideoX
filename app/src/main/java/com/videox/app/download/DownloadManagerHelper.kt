@@ -108,6 +108,7 @@ object DownloadManagerHelper {
                 reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else 0
             )
         }
+        return null
     }
 
     fun openDownloadedFile(context: Context, downloadId: Long) {
