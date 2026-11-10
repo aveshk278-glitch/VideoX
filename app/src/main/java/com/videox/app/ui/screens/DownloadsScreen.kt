@@ -102,7 +102,16 @@ fun DownloadsScreen(viewModel: DownloaderViewModel) {
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(filtered, key = { it.id }) { item ->
-                    DownloadRow(item = item, onOpen = { viewModel.openDownload(item.downloadId) })
+                    DownloadRow(
+                        item = item,
+                        onOpen = {
+                            if (item.engine == "YTDLP") viewModel.openFile(item.fileName)
+                            else viewModel.openDownload(item.downloadId)
+                        },
+                        onShare = { viewModel.shareFile(item.fileName) },
+                        onRetry = { viewModel.retryDownload(item) },
+                        onCancel = { viewModel.cancelDownload(item) }
+                    )
                 }
             }
         }
@@ -136,7 +145,13 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DownloadRow(item: DownloadItem, onOpen: () -> Unit) {
+private fun DownloadRow(
+    item: DownloadItem,
+    onOpen: () -> Unit,
+    onShare: () -> Unit,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit
+) {
     val dateText = remember(item.createdAt) {
         SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(item.createdAt))
     }
@@ -180,8 +195,19 @@ private fun DownloadRow(item: DownloadItem, onOpen: () -> Unit) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(item.errorMessage!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(6.dp))
-                OutlinedButton(onClick = { /* Retry is via Home: the user can paste the same link again. */ }) {
-                    Text("Retry from Home tab")
+                OutlinedButton(onClick = onRetry) {
+                    Text("Retry")
+                }
+            }
+            if (item.isRunning && item.engine == "YTDLP") {
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedButton(onClick = onCancel) { Text("Cancel") }
+            }
+            if (item.isCompleted) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onOpen) { Text("Open") }
+                    OutlinedButton(onClick = onShare) { Text("Share") }
                 }
             }
         }
