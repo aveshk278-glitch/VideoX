@@ -26,6 +26,14 @@ class DownloadRepository(
         get() = prefs.getBoolean("show_notifications", true)
         set(value) { prefs.edit().putBoolean("show_notifications", value).apply() }
 
+    var darkTheme: Boolean
+        get() = prefs.getBoolean("dark_theme", true)
+        set(value) { prefs.edit().putBoolean("dark_theme", value).apply() }
+
+    var maxConcurrentDownloads: Int
+        get() = prefs.getInt("max_concurrent", 2).coerceIn(1, 3)
+        set(value) { prefs.edit().putInt("max_concurrent", value.coerceIn(1, 3)).apply() }
+
     fun isOnline(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = cm.activeNetwork ?: return false
@@ -104,5 +112,65 @@ class DownloadRepository(
 
     fun openDownload(downloadId: Long) {
         DownloadManagerHelper.openDownloadedFile(context, downloadId)
+    }
+
+    // ---- yt-dlp downloads (Room rows updated by the ViewModel as progress arrives) ----
+
+    suspend fun insertYtDownload(item: DownloadItem): Long = dao.insert(item)
+
+    suspend fun updateYtProgress(id: Long, progress: Int, downloadedBytes: Long, totalBytes: Long) {
+        dao.updateProgressById(id, "RUNNING", progress, downloadedBytes, totalBytes, null)
+    }
+
+    suspend fun markYtStatus(id: Long, status: String, error: String?) {
+        dao.updateStatusById(id, status, if (status == "COMPLETED") 100 else 0, error)
+    }
+
+    /** Open a file downloaded by yt-dlp (or a direct download) from Downloads/VideoX. */
+    fun openFile(fileName: String) {
+        val file = java.io.File(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            "${DownloadManagerHelper.DOWNLOAD_FOLDER}/$fileName"
+        )
+        if (!file.exists()) return
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file
+        )
+        val mime = when (file.extension.lowercase()) {
+            "mp3", "m4a", "opus", "flac", "wav", "ogg" -> "audio/*"
+            else -> "video/*"
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
+    /** Share a downloaded file with other apps. */
+    fun shareFile(fileName: String) {
+        val file = java.io.File(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            "${DownloadManagerHelper.DOWNLOAD_FOLDER}/$fileName"
+        )
+        if (!file.exists()) return
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file
+        )
+        val mime = when (file.extension.lowercase()) {
+            "mp3", "m4a", "opus", "flac", "wav", "ogg" -> "audio/*"
+            else -> "video/*"
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(intent, "Share $fileName")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
