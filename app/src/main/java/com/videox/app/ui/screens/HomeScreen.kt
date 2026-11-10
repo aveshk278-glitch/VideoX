@@ -154,7 +154,7 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
                         Text(
                             text = "${item.status} • ${item.progress}% • " +
                                 "${DownloadManagerHelper.formatSize(item.downloadedBytes)} / " +
-                                DownloadManagerHelper.formatSize(item.totalBytes)",
+                                "${DownloadManagerHelper.formatSize(item.totalBytes)}",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(modifier = Modifier.height(8.dp))
