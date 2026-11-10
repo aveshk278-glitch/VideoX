@@ -1,9 +1,10 @@
-# VideoX — Android Video Downloader
+# VideoX 2.0 — Android Video & Audio Downloader
 
-VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**.
-It downloads **direct video file links** (MP4, WebM, MOV, M4V, 3GP) using Android
-`DownloadManager`, so downloads keep working in the background and resume
-after interruptions when the server allows it.
+VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
+inspired by the Seal app's workflow.
+It downloads supported-site links with the **yt-dlp engine**
+(`youtubedl-android` 0.18.1 + FFmpeg, the library Seal uses), and **direct
+video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 - **App name:** VideoX
 - **Package:** `com.videox.app`
@@ -11,17 +12,18 @@ after interruptions when the server allows it.
 - **Target / Compile SDK:** 34
 - **Language:** Kotlin 2.0.20, AGP 8.5.2, Gradle 8.7, Java 17
 - **Download folder:** `Downloads/VideoX` on the phone
+- **APK size:** large (roughly 50–80 MB) — yt-dlp bundles Python + FFmpeg + native libraries.
 
 > **Important — what VideoX does and does not do**
 >
-> VideoX supports only direct downloadable video URLs and sources that
-> explicitly permit downloading. It uses official Android APIs and
-> authorised download links. It does **not** bypass DRM, paywalls, login
-> restrictions or platform download protections, and it does **not** claim
-> that every social-media URL can be downloaded. It never collects
-> passwords or private account information. If a link is a web page, a
-> protected stream, or a DRM-protected video, VideoX will show a clear
-> error instead of downloading it.
+> VideoX supports only links that the source technically permits downloading.
+> yt-dlp downloads what a site's public page makes available; it does
+> **not** bypass DRM, paywalls, login restrictions or platform download
+> protections, and it does **not** claim that every social-media URL can be
+> downloaded. Sites change their protections often — YouTube and others
+> sometimes block yt-dlp until a newer yt-dlp version ships. When a
+> download is blocked, VideoX shows that error instead of pretending it
+> worked. VideoX never collects passwords or private account information.
 
 ## Features
 
