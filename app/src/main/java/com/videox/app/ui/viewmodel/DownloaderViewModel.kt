@@ -63,6 +63,31 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     var maxConcurrent by mutableStateOf(repository.maxConcurrentDownloads)
         private set
 
+    // ---- v2.9 settings (from the Seal Roadmap board) ----
+
+    var warnMetered by mutableStateOf(repository.warnMetered)
+        private set
+
+    var proxyUrl by mutableStateOf(repository.proxyUrl)
+        private set
+
+    var subtitlesEnabled by mutableStateOf(repository.subtitlesEnabled)
+        private set
+
+    var subtitleLangs by mutableStateOf(repository.subtitleLangs)
+        private set
+
+    var embedChapters by mutableStateOf(repository.embedChapters)
+        private set
+
+    /** The proxy actually used for yt-dlp requests: only a valid URL, never a typo. */
+    private val effectiveProxyUrl: String?
+        get() = proxyUrl.takeIf { it.isNotBlank() && QualitySelector.isValidProxyUrl(it) }
+
+    /** True when the metered-network warning dialog should be shown. */
+    var meteredConfirmPending by mutableStateOf(false)
+        private set
+
     /** True = audio only, false = video. */
     var audioOnly by mutableStateOf(false)
         private set
@@ -253,6 +278,39 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         queueSemaphore = Semaphore(maxConcurrent)
     }
 
+    fun updateWarnMetered(enabled: Boolean) {
+        warnMetered = enabled
+        repository.warnMetered = enabled
+    }
+
+    fun updateProxyUrl(value: String) {
+        proxyUrl = value
+        repository.proxyUrl = value
+    }
+
+    fun updateSubtitlesEnabled(enabled: Boolean) {
+        subtitlesEnabled = enabled
+        repository.subtitlesEnabled = enabled
+    }
+
+    fun updateSubtitleLangs(value: String) {
+        subtitleLangs = QualitySelector.sanitizeSubtitleLangs(value)
+        repository.subtitleLangs = subtitleLangs
+    }
+
+    fun updateEmbedChapters(enabled: Boolean) {
+        embedChapters = enabled
+        repository.embedChapters = enabled
+    }
+
+    /** True when the typed proxy text is non-empty but not a usable proxy URL. */
+    val proxyUrlInvalid: Boolean
+        get() = proxyUrl.isNotBlank() && !QualitySelector.isValidProxyUrl(proxyUrl)
+
+    fun dismissMeteredWarning() {
+        meteredConfirmPending = false
+    }
+
     fun updateAudioOnly(value: Boolean) {
         audioOnly = value
         selectedQualityHeight = null
@@ -333,6 +391,12 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                             "Only basic quality (360p) is reachable for this video right now — " +
                                 "YouTube is blocking higher qualities. You can still download 360p."
                         )
+                    } else if (audioOnly) {
+                        // Audio mode has no video quality list (Seal #750):
+                        // say what will actually download instead.
+                        showMessage(
+                            "Audio ($audioFormat) will be downloaded from this video. Tap Download."
+                        )
                     } else {
                         showMessage(
                             "${QualitySelector.maxQualityLabel(info.formats)} — " +
@@ -370,7 +434,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     } else {
                         showMessage(
-                            QualitySelector.describeYtDlpError(e.message),
+                            QualitySelector.describeYtDlpError(e.message, effectiveProxyUrl != null),
                             isError = true
                         )
                     }
@@ -386,11 +450,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
      */
     private suspend fun fetchInfo(url: String): Pair<YtVideoInfo, Boolean> {
         return try {
-            YtDlpEngine.getInfo(url) to false
+            YtDlpEngine.getInfo(url, effectiveProxyUrl) to false
         } catch (e: Exception) {
             if (QualitySelector.isYouTubeUrl(url)) {
                 try {
-                    YtDlpEngine.getInfoWithArgs(url, QualitySelector.ANDROID_FALLBACK_ARGS) to true
+                    YtDlpEngine.getInfoWithArgs(url, QualitySelector.ANDROID_FALLBACK_ARGS, effectiveProxyUrl) to true
                 } catch (_: Exception) {
                     throw e
                 }
@@ -400,7 +464,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun startDownload() {
+    fun startDownload(confirmedMetered: Boolean = false) {
         val url = urlInput.trim()
         if (url.isEmpty()) {
             showMessage("Paste a video link first.", isError = true)
@@ -410,6 +474,16 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             showMessage("No internet connection. Check your connection and try again.", isError = true)
             return
         }
+        // Metered-network warning (Seal Roadmap #1251): on mobile data,
+        // ask once before a download that may use a lot of data. The
+        // dialog's "Download anyway" re-enters here with the flag set.
+        if (!confirmedMetered &&
+            QualitySelector.shouldWarnMetered(repository.isNetworkMetered(), warnMetered)
+        ) {
+            meteredConfirmPending = true
+            return
+        }
+        meteredConfirmPending = false
         // A direct file found earlier by content-type probing.
         if (pendingDirectUrl == url && pendingDirectName != null) {
             val name = pendingDirectName
@@ -510,6 +584,12 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         attempts: List<String?>,
         allowFallbackOffer: Boolean
     ) {
+        // Snapshot the settings on the calling (main) thread: the
+        // download runs on IO and must not read Compose state there.
+        val proxy = effectiveProxyUrl
+        val options = QualitySelector.extraDownloadOptions(
+            subtitlesEnabled, subtitleLangs, embedChapters, audioOnly
+        )
         val processId = "videox_${System.currentTimeMillis()}"
         viewModelScope.launch(Dispatchers.IO) {
             queueSemaphore.acquire()
@@ -555,7 +635,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                             audioFormat = audioFormat,
                             outputBaseName = fileName,
                             extractorArgs = args,
-                            processId = processId
+                            processId = processId,
+                            proxyUrl = proxy,
+                            extraOptions = options
                         ) { progress, eta ->
                             viewModelScope.launch {
                                 if (rowId > 0) repository.updateYtProgress(rowId, progress.toInt(), 0L, 0L)
@@ -644,7 +726,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                         )
                     val canOffer = allowFallbackOffer && !audioOnly &&
                         blocked && QualitySelector.isYouTubeUrl(url)
-                    if (canOffer && YtDlpEngine.probeFallback(url)) {
+                    if (canOffer && YtDlpEngine.probeFallback(url, proxy)) {
                         if (rowId > 0) repository.markYtStatus(rowId, "FAILED", lastErr?.take(200))
                         withContext(Dispatchers.Main) {
                             fallbackOffer = FallbackOffer(url, fileName, displayName)
@@ -656,7 +738,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     } else {
                         // Accurate error, never a generic restriction.
-                        val err = QualitySelector.describeYtDlpError(lastErr)
+                        val err = QualitySelector.describeYtDlpError(lastErr, proxy != null)
                         if (rowId > 0) repository.markYtStatus(rowId, "FAILED", err.take(200))
                         withContext(Dispatchers.Main) {
                             showMessage("Download failed: ${err.take(1000)}", isError = true)
@@ -666,7 +748,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             } catch (e: Exception) {
                 // Only reached for errors outside the attempt loop
                 // (queue insert, engine check): report honestly.
-                val errText = QualitySelector.describeYtDlpError(e.message)
+                val errText = QualitySelector.describeYtDlpError(e.message, proxy != null)
                 if (rowId > 0) repository.markYtStatus(rowId, "FAILED", errText.take(200))
                 withContext(Dispatchers.Main) {
                     showMessage("Download failed: $errText", isError = true)
@@ -700,6 +782,47 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             showMessage("Download history cleared.")
             onDone()
         }
+    }
+
+    // ---- Settings backup and restore (v2.9, Seal Roadmap #577/#425) ----
+
+    fun backupSettings() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.backupSettings()
+            withContext(Dispatchers.Main) {
+                result.onSuccess { file ->
+                    showMessage("Settings backed up to Downloads/VideoX/${file.name}")
+                }.onFailure { e ->
+                    showMessage("Backup failed: ${e.message}", isError = true)
+                }
+            }
+        }
+    }
+
+    fun restoreSettings() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.restoreSettings()
+            withContext(Dispatchers.Main) {
+                result.onSuccess { applied ->
+                    refreshSettingsFromRepository()
+                    showMessage("Restored $applied settings from the backup file.")
+                }.onFailure { e ->
+                    showMessage(e.message ?: "Restore failed.", isError = true)
+                }
+            }
+        }
+    }
+
+    /** Re-read every setting from storage after a restore. */
+    private fun refreshSettingsFromRepository() {
+        wifiOnly = repository.wifiOnly
+        darkTheme = repository.darkTheme
+        updateMaxConcurrent(repository.maxConcurrentDownloads)
+        warnMetered = repository.warnMetered
+        proxyUrl = repository.proxyUrl
+        subtitlesEnabled = repository.subtitlesEnabled
+        subtitleLangs = repository.subtitleLangs
+        embedChapters = repository.embedChapters
     }
 
     fun openDownload(downloadId: Long) {
