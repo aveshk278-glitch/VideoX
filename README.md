@@ -1,4 +1,4 @@
-# VideoX 2.8 — Android Video & Audio Downloader
+# VideoX 2.9 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -27,6 +27,15 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
+- **Seal Roadmap features (v2.9):** a warning before downloading on a
+  metered connection (mobile data), an optional proxy setting for yt-dlp
+  (validated — an invalid proxy is ignored, never passed on), subtitle
+  embedding into downloaded videos (including auto-generated captions, with
+  English / Hindi / All language choice), chapter markers embedded when the
+  video has chapters, settings backup and restore
+  (`Downloads/VideoX/videox-settings-backup.json`), and a cleaner Audio only
+  screen that hides the video quality list. Subtitle and chapter flags were
+  verified against real yt-dlp 2026.10.26 with ffprobe before shipping.
 - **Self-updating yt-dlp engine (v2.2):** YouTube regularly changes its
   streaming and blocks old yt-dlp versions with HTTP 403. VideoX now
   updates its engine to the latest stable yt-dlp when the app starts, uses
