@@ -129,6 +129,20 @@ class QualitySelectorTest {
     }
 
     @Test
+    fun `estimated size is unknown when the video size is unknown`() {
+        // The user's screenshot (v2.6): 4K showed "Approx. 4.5 MB" —
+        // that was only the audio stream. When the video size is
+        // unknown the total is unknown (0), so HomeScreen shows no
+        // size instead of a wrong one.
+        val noVideoSize = listOf(
+            fmt("313", 2160, ext = "webm", size = 0L, videoOnly = true),
+            fmt("140", 0, ext = "m4a", size = 15_000_000, audioOnly = true)
+        )
+        assertEquals(0L, QualitySelector.estimatedSizeForHeight(noVideoSize, 2160))
+        assertEquals(0L, QualitySelector.estimatedSizeForHeight(noVideoSize, 1080))
+    }
+
+    @Test
     fun `empty format list reports no video honestly`() {
         assertEquals("No video formats found", QualitySelector.maxQualityLabel(emptyList()))
         assertNull(QualitySelector.maxHeight(emptyList()))
@@ -241,6 +255,23 @@ class QualitySelectorTest {
             "Unable to download webpage: [Errno -2] Name or service not known"
         )
         assertTrue(net.contains("internet connection"))
+    }
+
+    @Test
+    fun `describeYtDlpError maps DNS failures to a clear message`() {
+        // The exact error from the user's phone (v2.6, 11 Nov 23:56):
+        // the download server's hostname did not resolve at all, after
+        // 10 yt-dlp retries. Previously this fell through to the raw
+        // text; now it explains it is a DNS problem and what to try.
+        val dns = QualitySelector.describeYtDlpError(
+            "ERROR: [download] Got error: [Errno 7] No address associated with hostname. Giving up after 10 retries"
+        )
+        assertTrue(dns.contains("DNS"))
+        assertTrue(dns.contains("Retry"))
+        val dns2 = QualitySelector.describeYtDlpError(
+            "ERROR: [Errno -3] Temporary failure in name resolution"
+        )
+        assertTrue(dns2.contains("DNS"))
     }
 
     @Test
