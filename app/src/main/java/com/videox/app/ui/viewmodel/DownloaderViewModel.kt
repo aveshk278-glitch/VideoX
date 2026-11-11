@@ -11,8 +11,8 @@ import androidx.lifecycle.viewModelScope
 import com.videox.app.VideoXApp
 import com.videox.app.data.DownloadItem
 import com.videox.app.download.DownloadManagerHelper
+import com.videox.app.download.QualitySelector
 import com.videox.app.download.YtDlpEngine
-import com.videox.app.download.YtFormat
 import com.videox.app.download.YtVideoInfo
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -70,8 +70,22 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     var videoInfo by mutableStateOf<YtVideoInfo?>(null)
         private set
 
-    var selectedFormat by mutableStateOf<YtFormat?>(null)
+    /**
+     * Selected video quality height in pixels, or null = Best Quality
+     * (highest genuinely available, video + best audio merged).
+     * Quality is chosen by height, never by raw format id — a raw
+     * high-resolution format id is video-only and would download silent.
+     */
+    var selectedQualityHeight by mutableStateOf<Int?>(null)
         private set
+
+    /** Distinct heights actually available for the current video, best first. */
+    val availableQualities: List<Int>
+        get() = videoInfo?.let { QualitySelector.availableHeights(it.formats) } ?: emptyList()
+
+    /** Honest "Max available: 1080p Full HD" line for the current video. */
+    val maxQualityLabel: String?
+        get() = videoInfo?.let { QualitySelector.maxQualityLabel(it.formats) }
 
     /** Live ETA / progress text for the most recent yt-dlp download. */
     var activeEtaText by mutableStateOf<String?>(null)
@@ -115,7 +129,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         message = null
         if (videoInfo != null) {
             videoInfo = null
-            selectedFormat = null
+            selectedQualityHeight = null
         }
     }
 
@@ -123,7 +137,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         urlInput = text.trim()
         message = null
         videoInfo = null
-        selectedFormat = null
+        selectedQualityHeight = null
     }
 
     /** Paste whatever text link is currently on the clipboard, if any. */
@@ -155,7 +169,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun updateAudioOnly(value: Boolean) {
         audioOnly = value
-        selectedFormat = null
+        selectedQualityHeight = null
     }
 
     fun updateAudioFormat(value: String) {
@@ -166,8 +180,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         customFileName = value
     }
 
-    fun selectFormat(format: YtFormat) {
-        selectedFormat = format
+    fun selectQuality(height: Int?) {
+        // Clamp to what actually exists — never promise an unavailable height.
+        selectedQualityHeight = videoInfo?.let { QualitySelector.clampHeight(it.formats, height) }
     }
 
     fun showMessage(text: String, isError: Boolean = false) {
@@ -202,12 +217,15 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 val info = YtDlpEngine.getInfo(url)
                 withContext(Dispatchers.Main) {
                     videoInfo = info
-                    selectedFormat = null
+                    selectedQualityHeight = null
                     fetchingFormats = false
                     if (info.formats.isEmpty()) {
                         showMessage("No downloadable formats found for this link.", isError = true)
                     } else {
-                        showMessage("${info.formats.size} formats found — pick one, then tap Download.")
+                        showMessage(
+                            "${QualitySelector.maxQualityLabel(info.formats)} — " +
+                                "Best Quality is selected. Pick another quality if you want, then tap Download."
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -264,13 +282,21 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun startYtDlpDownload(url: String) {
         val info = videoInfo ?: return
-        val format = selectedFormat
+        val qualityHeight = QualitySelector.clampHeight(info.formats, selectedQualityHeight)
+        val qualityLabel = if (audioOnly) {
+            "Audio ($audioFormat)"
+        } else if (qualityHeight == null) {
+            "Best Quality"
+        } else {
+            QualitySelector.qualityLabel(qualityHeight)
+        }
+        val formatSelector = QualitySelector.buildFormatSelector(qualityHeight)
         val fileName = if (customFileName.isBlank()) {
             YtDlpEngine.sanitizeFileName(info.title)
         } else {
             YtDlpEngine.sanitizeFileName(customFileName)
         }
-        val displayName = fileName + if (audioOnly) ".$audioFormat" else ".${format?.ext ?: "mp4"}"
+        val displayName = fileName + if (audioOnly) ".$audioFormat" else ".mp4"
         val processId = "videox_${System.currentTimeMillis()}"
         viewModelScope.launch(Dispatchers.IO) {
             queueSemaphore.acquire()
@@ -281,7 +307,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     fileName = displayName,
                     status = "QUEUED",
                     mode = if (audioOnly) "AUDIO" else "VIDEO",
-                    formatLabel = format?.label,
+                    formatLabel = qualityLabel,
                     processId = processId,
                     engine = "YTDLP"
                 )
@@ -290,11 +316,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     showMessage("Download queued: $displayName")
                     urlInput = ""
                     videoInfo = null
-                    selectedFormat = null
+                    selectedQualityHeight = null
                 }
                 val response = YtDlpEngine.download(
                     url = url,
-                    formatId = format?.formatId,
+                    formatSelector = formatSelector,
                     audioOnly = audioOnly,
                     audioFormat = audioFormat,
                     customFileName = if (customFileName.isBlank()) null else customFileName,
@@ -343,7 +369,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         urlInput = item.url
         audioOnly = item.mode == "AUDIO"
         videoInfo = null
-        selectedFormat = null
+        selectedQualityHeight = null
         showMessage("Tap Download to retry: ${item.fileName}")
     }
 
