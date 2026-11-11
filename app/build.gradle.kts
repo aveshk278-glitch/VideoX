@@ -13,8 +13,8 @@ android {
         applicationId = "com.videox.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 9
-        versionName = "2.7"
+        versionCode = 10
+        versionName = "2.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -24,6 +24,24 @@ android {
             reset()
             include("armeabi-v7a", "arm64-v8a")
             isUniversalApk = false
+        }
+    }
+
+    // One fixed signing key for every build. GitHub Actions runners are
+    // fresh VMs, so each run used to generate its own random debug
+    // keystore — every version had a different signature and Android
+    // refused to install an update ("package conflicts with an existing
+    // package"). The committed app/debug.keystore is now used for debug
+    // builds, so all versions share one signature and updates install
+    // over the previous version. This is a debug key (default Android
+    // debug credentials); a Play Store release would use a separate
+    // release key kept in secrets instead.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
