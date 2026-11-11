@@ -126,6 +126,35 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+                Text("yt-dlp engine", fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Version: ${viewModel.ytDlpVersion?.let { "v$it" } ?: "…"}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "YouTube changes often break old engine versions (downloads fail with 403). VideoX tries to update the engine itself when the app starts; if a download still fails with 403, update it here and retry.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { viewModel.updateYtDlpEngine() },
+                    enabled = viewModel.ytdlpReady && !viewModel.updatingEngine
+                ) {
+                    Text(if (viewModel.updatingEngine) "Updating…" else "Update yt-dlp engine")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -179,10 +208,10 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("About VideoX", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Version 2.1  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
+                Text("Version 2.2  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "VideoX 2.1 downloads supported-site links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct video links (MP4, WebM, MOV, M4V, 3GP) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio. It does not bypass DRM, paywalls or logins, and never collects passwords.",
+                    "VideoX 2.2 downloads supported-site links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct video links (MP4, WebM, MOV, M4V, 3GP) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. It does not bypass DRM, paywalls or logins, and never collects passwords.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
