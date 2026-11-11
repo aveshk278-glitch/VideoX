@@ -13,8 +13,8 @@ android {
         applicationId = "com.videox.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 11
-        versionName = "2.9"
+        versionCode = 12
+        versionName = "2.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -104,6 +104,13 @@ dependencies {
     // yt-dlp engine (Seal's library): bundles yt-dlp + Python, FFmpeg for audio extraction.
     implementation("io.github.junkfood02.youtubedl-android:library:$youtubedlAndroid")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$youtubedlAndroid")
+
+    // Offline speech recognition (Vosk) for video-to-text transcription.
+    // The @aar notation is required: these artifacts ship native libraries
+    // and must not pull transitive dependencies (the official Vosk demo
+    // declares them the same way). JNA is Vosk's native bridge.
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
