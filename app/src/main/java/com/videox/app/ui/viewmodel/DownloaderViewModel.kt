@@ -332,11 +332,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             QualitySelector.qualityLabel(qualityHeight)
         }
         val formatSelector = QualitySelector.buildFormatSelector(qualityHeight)
-        val fileName = if (customFileName.isBlank()) {
-            YtDlpEngine.sanitizeFileName(info.title)
-        } else {
-            YtDlpEngine.sanitizeFileName(customFileName)
-        }
+        // One deterministic name, used both for the file yt-dlp writes
+        // and the file the app looks for afterwards.
+        val fileName = QualitySelector.resolveOutputBaseName(info.title, customFileName)
         val displayName = fileName + if (audioOnly) ".$audioFormat" else ".mp4"
         runYtDlpDownload(
             url = url,
@@ -382,7 +380,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     formatSelector = formatSelector,
                     audioOnly = audioOnly,
                     audioFormat = audioFormat,
-                    customFileName = if (customFileName.isBlank()) null else customFileName,
+                    outputBaseName = fileName,
                     processId = processId
                 ) { progress, eta ->
                     viewModelScope.launch {
@@ -400,9 +398,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     if (rowId > 0) repository.markYtStatus(rowId, "COMPLETED", null)
                     withContext(Dispatchers.Main) { showMessage("Download finished: $displayName") }
                 } else {
-                    val err = response.out ?: "yt-dlp finished but no file was created."
+                    // Show the FULL error (yt-dlp logs to stderr): the old
+                    // 200-char cut hid the real reason from the user.
+                    val err = response.err?.takeIf { it.isNotBlank() }
+                        ?: response.out
+                        ?: "yt-dlp finished but no file was created."
                     if (rowId > 0) repository.markYtStatus(rowId, "FAILED", err.take(200))
-                    withContext(Dispatchers.Main) { showMessage("Download failed: ${err.take(200)}", isError = true) }
+                    withContext(Dispatchers.Main) { showMessage("Download failed: ${err.take(1000)}", isError = true) }
                 }
             } catch (e: Exception) {
                 val errText = e.message ?: "yt-dlp reported an error."
