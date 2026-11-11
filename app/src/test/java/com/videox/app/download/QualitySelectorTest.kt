@@ -158,4 +158,18 @@ class QualitySelectorTest {
         assertNull(QualitySelector.extractorArgsFor("https://vimeo.com/123456"))
         assertNull(QualitySelector.extractorArgsFor("https://www.facebook.com/watch?v=1"))
     }
+
+    @Test
+    fun `sanitizeFileName keeps only safe characters`() {
+        assertEquals("My Video 2024", QualitySelector.sanitizeFileName("My Video 2024"))
+        assertEquals("a_b_c", QualitySelector.sanitizeFileName("a/b:c"))
+        assertEquals("______", QualitySelector.sanitizeFileName("हिन्दी"))
+    }
+
+    @Test
+    fun `resolveOutputBaseName prefers the custom name and falls back to the title`() {
+        assertEquals("my_clip", QualitySelector.resolveOutputBaseName("Some Title!", "my_clip"))
+        assertEquals("Some Title_", QualitySelector.resolveOutputBaseName("Some Title!", ""))
+        assertEquals("Some Title_", QualitySelector.resolveOutputBaseName("Some Title!", null))
+    }
 }
