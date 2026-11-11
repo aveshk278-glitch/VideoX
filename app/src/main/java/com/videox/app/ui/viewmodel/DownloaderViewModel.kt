@@ -14,7 +14,6 @@ import com.videox.app.download.DownloadManagerHelper
 import com.videox.app.download.QualitySelector
 import com.videox.app.download.YtDlpEngine
 import com.videox.app.download.YtVideoInfo
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +22,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+
+/** Offered when full quality is blocked but a 360p download would work — the user must choose it. */
+data class FallbackOffer(
+    val url: String,
+    val fileName: String,
+    val displayName: String
+)
 
 class DownloaderViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -103,6 +109,18 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     var updatingEngine by mutableStateOf(false)
         private set
+
+    /** Shown when full quality is blocked but 360p would work — the user must tap to accept it. */
+    var fallbackOffer by mutableStateOf<FallbackOffer?>(null)
+        private set
+
+    /** True when the current format list came from the Android client (360p only). */
+    var videoInfoFromFallback by mutableStateOf(false)
+        private set
+
+    /** Direct file found by content-type probing, awaiting the next Download tap. */
+    private var pendingDirectUrl: String? = null
+    private var pendingDirectName: String? = null
 
     private var queueSemaphore = Semaphore(maxConcurrent)
 
@@ -195,6 +213,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             videoInfo = null
             selectedQualityHeight = null
         }
+        fallbackOffer = null
+        videoInfoFromFallback = false
+        pendingDirectUrl = null
+        pendingDirectName = null
     }
 
     fun onPaste(text: String) {
@@ -258,8 +280,23 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         message = null
     }
 
-    /** Ask yt-dlp for the title and available formats of the pasted URL. */
-    fun fetchFormats() {
+    /**
+     * Ask yt-dlp for the title and available formats of the pasted URL.
+     * Routing, in order:
+     * 1. Direct file link (known extension) — no formats needed.
+     * 2. yt-dlp with default clients — every supported site, pages with
+     *    embedded video, and direct files the generic extractor finds.
+     * 3. YouTube blocked? Retry with the Android client — only 360p is
+     *    reachable that way, and the list will honestly show just that.
+     * 4. Still nothing? Probe the URL's content-type: a real media file
+     *    (extension-less / signed / redirected link) goes to
+     *    DownloadManager.
+     * 5. Otherwise the accurate yt-dlp error — never a generic
+     *    "not supported" message for a link that might work.
+     * When [autoStartDirect] is true (called from Download), a direct
+     * file found by probing starts downloading immediately.
+     */
+    fun fetchFormats(autoStartDirect: Boolean = false) {
         val url = urlInput.trim()
         if (url.isEmpty()) {
             showMessage("Paste a video link first.", isError = true)
@@ -267,7 +304,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         if (DownloadManagerHelper.isSupportedVideoUrl(url)) {
             // Direct file link — no formats to fetch, it downloads as-is.
-            showMessage("Direct video link — tap Download, no format list needed.")
+            showMessage("Direct media link — tap Download, no format list needed.")
             return
         }
         if (!YtDlpEngine.initialized) {
@@ -276,18 +313,26 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         fetchingFormats = true
         message = null
+        fallbackOffer = null
+        videoInfoFromFallback = false
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Newest engine first, so the format list matches what
                 // the download will actually be able to fetch.
                 ensureEngineUpdated()
-                val info = YtDlpEngine.getInfo(url)
+                val (info, fromFallback) = fetchInfo(url)
                 withContext(Dispatchers.Main) {
                     videoInfo = info
+                    videoInfoFromFallback = fromFallback
                     selectedQualityHeight = null
                     fetchingFormats = false
                     if (info.formats.isEmpty()) {
                         showMessage("No downloadable formats found for this link.", isError = true)
+                    } else if (fromFallback) {
+                        showMessage(
+                            "Only basic quality (360p) is reachable for this video right now — " +
+                                "YouTube is blocking higher qualities. You can still download 360p."
+                        )
                     } else {
                         showMessage(
                             "${QualitySelector.maxQualityLabel(info.formats)} — " +
@@ -296,15 +341,61 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
             } catch (e: Exception) {
+                // yt-dlp could not read this link at all. Before giving
+                // up, check whether the URL is actually a direct media
+                // file (extension-less / signed / redirected).
+                val probe = try {
+                    DownloadManagerHelper.probeDirectMedia(url)
+                } catch (_: Exception) {
+                    null
+                }
                 withContext(Dispatchers.Main) {
                     fetchingFormats = false
                     videoInfo = null
-                    showMessage(
-                        "Could not read this link: ${e.message ?: "yt-dlp reported an error."} " +
-                            "The site may block downloads, or the link may need login.",
-                        isError = true
-                    )
+                    if (probe != null) {
+                        val sizeText = if (probe.contentLength > 0) {
+                            " (${DownloadManagerHelper.formatSize(probe.contentLength)})"
+                        } else ""
+                        if (autoStartDirect) {
+                            pendingDirectUrl = null
+                            pendingDirectName = null
+                            startDirectDownload(url, probe.fileName)
+                        } else {
+                            pendingDirectUrl = url
+                            pendingDirectName = probe.fileName
+                            showMessage(
+                                "This is a direct ${probe.contentType} file$sizeText — " +
+                                    "tap Download to save it as ${probe.fileName}."
+                            )
+                        }
+                    } else {
+                        showMessage(
+                            QualitySelector.describeYtDlpError(e.message),
+                            isError = true
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    /**
+     * Fetch formats, default clients first. On a YouTube block, retry
+     * with the Android client (360p only) and say so in the result.
+     * Throws the ORIGINAL error when both fail.
+     */
+    private suspend fun fetchInfo(url: String): Pair<YtVideoInfo, Boolean> {
+        return try {
+            YtDlpEngine.getInfo(url) to false
+        } catch (e: Exception) {
+            if (QualitySelector.isYouTubeUrl(url)) {
+                try {
+                    YtDlpEngine.getInfoWithArgs(url, QualitySelector.ANDROID_FALLBACK_ARGS) to true
+                } catch (_: Exception) {
+                    throw e
+                }
+            } else {
+                throw e
             }
         }
     }
@@ -319,6 +410,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             showMessage("No internet connection. Check your connection and try again.", isError = true)
             return
         }
+        // A direct file found earlier by content-type probing.
+        if (pendingDirectUrl == url && pendingDirectName != null) {
+            val name = pendingDirectName
+            pendingDirectUrl = null
+            pendingDirectName = null
+            startDirectDownload(url, name)
+            return
+        }
         if (DownloadManagerHelper.isSupportedVideoUrl(url)) {
             startDirectDownload(url)
             return
@@ -326,18 +425,19 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         // yt-dlp path.
         if (videoInfo == null) {
             // Fetch formats first, then the user picks one and taps Download again.
-            fetchFormats()
+            // A direct file discovered during the fetch starts itself.
+            fetchFormats(autoStartDirect = true)
             showMessage("Reading formats… tap Download again after picking one.")
             return
         }
         startYtDlpDownload(url)
     }
 
-    private fun startDirectDownload(url: String) {
+    private fun startDirectDownload(url: String, fileName: String? = null) {
         viewModelScope.launch {
-            val result = repository.startDownload(url)
+            val result = repository.startDownload(url, fileName)
             result.onSuccess {
-                val name = DownloadManagerHelper.fileNameFromUrl(url)
+                val name = fileName ?: DownloadManagerHelper.fileNameFromUrl(url)
                 showMessage("Download started: $name — saved to Downloads/VideoX")
                 urlInput = ""
                 videoInfo = null
@@ -362,13 +462,43 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         // and the file the app looks for afterwards.
         val fileName = QualitySelector.resolveOutputBaseName(info.title, customFileName)
         val displayName = fileName + if (audioOnly) ".$audioFormat" else ".mp4"
+        // When the format list itself came from the Android client, the
+        // download must use that client too — the list already showed
+        // only what it can reach, so this is not a downgrade.
+        val attempts = if (videoInfoFromFallback) {
+            listOf(QualitySelector.ANDROID_FALLBACK_ARGS)
+        } else {
+            listOf<String?>(null)
+        }
         runYtDlpDownload(
             url = url,
             qualityLabel = qualityLabel,
             formatSelector = formatSelector,
             fileName = fileName,
-            displayName = displayName
+            displayName = displayName,
+            attempts = attempts,
+            allowFallbackOffer = !videoInfoFromFallback
         )
+    }
+
+    /** The user explicitly chose the 360p fallback after full quality was blocked. */
+    fun startFallbackDownload() {
+        val offer = fallbackOffer ?: return
+        fallbackOffer = null
+        updateAudioOnly(false)
+        runYtDlpDownload(
+            url = offer.url,
+            qualityLabel = "360p (basic quality)",
+            formatSelector = QualitySelector.ANDROID_FALLBACK_SELECTOR,
+            fileName = offer.fileName,
+            displayName = offer.displayName,
+            attempts = listOf(QualitySelector.ANDROID_FALLBACK_ARGS),
+            allowFallbackOffer = false
+        )
+    }
+
+    fun dismissFallbackOffer() {
+        fallbackOffer = null
     }
 
     private fun runYtDlpDownload(
@@ -376,7 +506,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         qualityLabel: String,
         formatSelector: String,
         fileName: String,
-        displayName: String
+        displayName: String,
+        attempts: List<String?>,
+        allowFallbackOffer: Boolean
     ) {
         val processId = "videox_${System.currentTimeMillis()}"
         viewModelScope.launch(Dispatchers.IO) {
@@ -402,25 +534,19 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     videoInfo = null
                     selectedQualityHeight = null
                 }
-                val attempts = QualitySelector.downloadAttempts(url)
                 var attemptIndex = 0
                 var engineRetried = false
                 var lastErr: String? = null
                 var done = false
                 while (attemptIndex < attempts.size && !done) {
                     val args = attempts[attemptIndex]
-                    val isFallback = attemptIndex > 0
-                    if (isFallback) {
-                        // Drop the full-quality attempt's partial files so
-                        // the 360p attempt starts clean instead of trying
-                        // to resume the wrong format's .part.
-                        YtDlpEngine.downloadDir().listFiles()
-                            ?.filter { it.name.startsWith(fileName) && it.name.endsWith(".part") }
-                            ?.forEach { it.delete() }
-                        withContext(Dispatchers.Main) {
-                            showMessage("Full quality is blocked — trying the basic (360p) download…")
-                        }
-                    }
+                    // Snapshot the folder before the attempt: a file only
+                    // counts as "downloaded" if it appeared or changed
+                    // during THIS attempt (an older same-named file from
+                    // a previous download must not fake a success).
+                    val dir = YtDlpEngine.downloadDir()
+                    val beforeNames = dir.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+                    val attemptStartedAt = System.currentTimeMillis()
                     try {
                         val response = YtDlpEngine.download(
                             url = url,
@@ -438,18 +564,25 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                                 }
                             }
                         }
-                        // yt-dlp finished without throwing — check the file actually exists.
-                        // (.part files don't count: a failed download leaves them behind.)
-                        val expected = File(YtDlpEngine.downloadDir(), displayName)
-                        val found = expected.exists() || YtDlpEngine.downloadDir().listFiles()
-                            ?.any { it.name.startsWith(fileName) && !it.name.endsWith(".part") } == true
-                        if (found) {
-                            if (rowId > 0) repository.markYtStatus(rowId, "COMPLETED", null)
-                            val suffix = if (isFallback) {
-                                " — only 360p was available; YouTube blocked the higher quality."
-                            } else ""
+                        // yt-dlp finished without throwing — check a REAL
+                        // file actually appeared (.part files don't count).
+                        val foundFile = dir.listFiles()
+                            ?.filter { it.name.startsWith(fileName) && !it.name.endsWith(".part") }
+                            ?.firstOrNull { it.name !in beforeNames || it.lastModified() >= attemptStartedAt }
+                        if (foundFile != null) {
+                            // The real extension may differ from the
+                            // assumed one (e.g. a direct WebM stays .webm,
+                            // not .mp4) — record the actual filename so
+                            // the Downloads tab can open the right file.
+                            val actualName = foundFile.name
+                            if (rowId > 0) {
+                                repository.markYtStatus(rowId, "COMPLETED", null)
+                                if (actualName != displayName) {
+                                    repository.updateYtFileName(rowId, actualName)
+                                }
+                            }
                             withContext(Dispatchers.Main) {
-                                showMessage("Download finished: $displayName$suffix")
+                                showMessage("Download finished: $actualName")
                             }
                             done = true
                         } else {
@@ -485,19 +618,39 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
                 if (!done) {
-                    // Every attempt failed — show the FULL last error
-                    // (yt-dlp logs to stderr); the old 200-char cut hid
-                    // the real reason from the user.
-                    val err = lastErr ?: "yt-dlp reported an error."
-                    if (rowId > 0) repository.markYtStatus(rowId, "FAILED", err.take(200))
-                    withContext(Dispatchers.Main) {
-                        showMessage("Download failed: ${err.take(1000)}", isError = true)
+                    // Every attempt failed. Never silently downgrade: if
+                    // the 360p fallback WOULD work, offer it as an
+                    // explicit choice instead of downloading it.
+                    val blocked = lastErr != null && (
+                        lastErr.contains("403") ||
+                            lastErr.contains("not available", ignoreCase = true) ||
+                            lastErr.contains("bot", ignoreCase = true)
+                        )
+                    val canOffer = allowFallbackOffer && !audioOnly &&
+                        blocked && QualitySelector.isYouTubeUrl(url)
+                    if (canOffer && YtDlpEngine.probeFallback(url)) {
+                        if (rowId > 0) repository.markYtStatus(rowId, "FAILED", lastErr?.take(200))
+                        withContext(Dispatchers.Main) {
+                            fallbackOffer = FallbackOffer(url, fileName, displayName)
+                            showMessage(
+                                "The quality you picked couldn't be downloaded — YouTube is blocking it right now. " +
+                                    "360p is available instead. Tap “Download 360p” below if you want it.",
+                                isError = true
+                            )
+                        }
+                    } else {
+                        // Accurate error, never a generic restriction.
+                        val err = QualitySelector.describeYtDlpError(lastErr)
+                        if (rowId > 0) repository.markYtStatus(rowId, "FAILED", err.take(200))
+                        withContext(Dispatchers.Main) {
+                            showMessage("Download failed: ${err.take(1000)}", isError = true)
+                        }
                     }
                 }
             } catch (e: Exception) {
                 // Only reached for errors outside the attempt loop
                 // (queue insert, engine check): report honestly.
-                val errText = e.message ?: "yt-dlp reported an error."
+                val errText = QualitySelector.describeYtDlpError(e.message)
                 if (rowId > 0) repository.markYtStatus(rowId, "FAILED", errText.take(200))
                 withContext(Dispatchers.Main) {
                     showMessage("Download failed: $errText", isError = true)
