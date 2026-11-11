@@ -144,6 +144,27 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
             Icon(Icons.Filled.Download, contentDescription = null)
             Text("  Download")
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { viewModel.extractText() },
+            enabled = !viewModel.extractingText,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (viewModel.extractingText) "Extracting text…" else "Extract text from video")
+        }
+        Text(
+            text = "Saves the video's subtitles/captions as a clean .txt file — the video itself is not downloaded. Languages come from Settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        viewModel.transcriptionProgress?.let { progress ->
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = progress,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         if (!viewModel.ytdlpReady) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -351,7 +372,7 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    // Metered-network warning (Seal Roadmap #1251): ask before a
+    // Metered-network warning: ask before a
     // download on mobile data, so a big video does not eat the
     // user's data plan silently. Can be turned off in Settings.
     if (viewModel.meteredConfirmPending) {
