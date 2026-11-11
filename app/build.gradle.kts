@@ -13,8 +13,8 @@ android {
         applicationId = "com.videox.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 13
-        versionName = "2.11"
+        versionCode = 14
+        versionName = "2.12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
