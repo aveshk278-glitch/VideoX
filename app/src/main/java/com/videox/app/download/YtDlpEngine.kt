@@ -23,6 +23,7 @@ data class YtFormat(
     val formatId: String,
     val ext: String,
     val resolution: String,
+    val height: Int,
     val label: String,
     val fileSize: Long,
     val isAudioOnly: Boolean,
@@ -97,6 +98,7 @@ object YtDlpEngine {
                 formatId = formatId,
                 ext = ext,
                 resolution = resolution,
+                height = height,
                 label = label,
                 fileSize = f.fileSize,
                 isAudioOnly = isAudioOnly,
@@ -105,22 +107,33 @@ object YtDlpEngine {
                 acodec = acodec
             )
         }
+        // Highest resolution first, so the best quality is never buried
+        // below the low-quality combined formats.
+        val sorted = formats.sortedWith(
+            compareByDescending<YtFormat> { it.height }
+                .thenByDescending { !it.isVideoOnly }
+        )
         return YtVideoInfo(
             title = info.title ?: url,
             uploader = info.uploader ?: "",
             durationSeconds = info.duration.toLong(),
-            formats = formats
+            formats = sorted
         )
     }
 
     /**
-     * Download with yt-dlp. [onProgress] receives percent (0-100) and ETA seconds.
+     * Download with yt-dlp. [formatSelector] is a yt-dlp format string
+     * built by [QualitySelector] (e.g. "bestvideo+bestaudio/best" or
+     * "bestvideo[height<=1080]+bestaudio/best"). It always pairs video
+     * with the best audio stream so the merged file has sound — a raw
+     * video-only format id must NEVER be passed here on its own.
+     * [onProgress] receives percent (0-100) and ETA seconds.
      * Returns the YoutubeDLResponse when the process finishes.
      * Cancel with [cancel] using the same [processId].
      */
     fun download(
         url: String,
-        formatId: String?,
+        formatSelector: String?,
         audioOnly: Boolean,
         audioFormat: String,
         customFileName: String?,
@@ -139,10 +152,9 @@ object YtDlpEngine {
             request.addOption("-f", "bestaudio/best")
             request.addOption("--extract-audio")
             request.addOption("--audio-format", audioFormat)
-        } else if (!formatId.isNullOrBlank()) {
-            request.addOption("-f", formatId)
         } else {
-            request.addOption("-f", "bestvideo+bestaudio/best")
+            // Video + best audio, merged by FFmpeg. Never a bare video-only id.
+            request.addOption("-f", formatSelector ?: "bestvideo+bestaudio/best")
         }
         // merge-output-format needs FFmpeg (bundled ffmpeg module).
         request.addOption("--merge-output-format", "mp4")
