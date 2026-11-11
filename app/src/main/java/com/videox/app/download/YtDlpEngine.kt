@@ -68,6 +68,28 @@ object YtDlpEngine {
         return File(downloads, DownloadManagerHelper.DOWNLOAD_FOLDER).apply { mkdirs() }
     }
 
+    /** Current bundled yt-dlp version (e.g. "2025.11.12"), or null if unknown. */
+    fun ytDlpVersion(context: Context): String? {
+        return try {
+            YoutubeDL.getInstance().version(context)?.trim()?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Download the latest stable yt-dlp from GitHub (the library's
+     * built-in self-update) and switch the engine to it.
+     * Returns "DONE" when a newer version was installed,
+     * "ALREADY_UP_TO_DATE" when there was nothing newer.
+     * Throws on network failure. Safe to call repeatedly; call it on a
+     * background thread — it downloads several MB on first update.
+     */
+    fun updateEngine(context: Context): String {
+        val status = YoutubeDL.getInstance().updateYoutubeDL(context)
+        return status.name
+    }
+
     fun sanitizeFileName(name: String): String {
         val cleaned = name.trim().replace(Regex("[^A-Za-z0-9._\\- ]"), "_").trim()
         return if (cleaned.isEmpty()) "videox_${System.currentTimeMillis()}" else cleaned
@@ -148,6 +170,11 @@ object YtDlpEngine {
         request.addOption("-o", File(dir, "$baseName.%(ext)s").absolutePath)
         // Never overwrite without asking: yt-dlp resumes partial files by default.
         request.addOption("--no-overwrites")
+        // YouTube SABR workaround (yt-dlp #12482): the Android player
+        // client is not forced into SABR, so its formats keep real URLs.
+        QualitySelector.extractorArgsFor(url)?.let {
+            request.addOption("--extractor-args", it)
+        }
         if (audioOnly) {
             request.addOption("-f", "bestaudio/best")
             request.addOption("--extract-audio")
