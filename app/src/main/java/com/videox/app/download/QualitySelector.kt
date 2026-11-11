@@ -290,7 +290,7 @@ object QualitySelector {
     fun resolveOutputBaseName(title: String, customFileName: String?): String =
         if (customFileName.isNullOrBlank()) sanitizeFileName(title) else sanitizeFileName(customFileName)
 
-    // ---- v2.9: features taken from the Seal Roadmap board ----
+    // ---- v2.9 features ----
 
     /**
      * A proxy URL is usable by yt-dlp when it has a supported scheme
