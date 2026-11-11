@@ -13,8 +13,8 @@ android {
         applicationId = "com.videox.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -89,4 +89,7 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Unit tests for the quality-selection logic (QualitySelectorTest).
+    testImplementation("junit:junit:4.13.2")
 }
