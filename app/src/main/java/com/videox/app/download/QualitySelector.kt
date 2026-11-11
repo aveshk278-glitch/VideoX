@@ -126,4 +126,22 @@ object QualitySelector {
             null
         }
     }
+
+    /**
+     * Make a filename safe for disk: only ASCII letters, digits, dot,
+     * dash, underscore and space survive; everything else becomes "_".
+     * Used for BOTH the name the app expects AND the name yt-dlp is told
+     * to write, so the two can never disagree (v2.2 bug: the app expected
+     * a sanitised title while yt-dlp wrote the raw %(title)s, so a
+     * downloaded file was reported as "failed" when its title contained
+     * characters the two sides handled differently).
+     */
+    fun sanitizeFileName(name: String): String {
+        val cleaned = name.trim().replace(Regex("[^A-Za-z0-9._\\- ]"), "_").trim()
+        return if (cleaned.isEmpty()) "videox_${System.currentTimeMillis()}" else cleaned
+    }
+
+    /** The exact base name (no extension) the download will be saved as. */
+    fun resolveOutputBaseName(title: String, customFileName: String?): String =
+        if (customFileName.isNullOrBlank()) sanitizeFileName(title) else sanitizeFileName(customFileName)
 }
