@@ -29,6 +29,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     private val repository = (application as VideoXApp).repository
     private val appContext = application.applicationContext
 
+    /** True once this session's pre-download engine update has been tried. */
+    private var engineUpdateChecked = false
+
     val downloads: StateFlow<List<DownloadItem>> =
         repository.allDownloads.stateIn(
             viewModelScope,
@@ -137,6 +140,26 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 waited++
             }
             ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
+        }
+    }
+
+    /**
+     * Make sure the yt-dlp engine has been updated once this session
+     * before any yt-dlp work runs. The bundled engine (2025.11.12) is
+     * too old for YouTube's current (SABR) delivery: its web formats
+     * fail with 403, and the Android-client workaround only gives 360p.
+     * The update downloads the latest stable yt-dlp from GitHub; if it
+     * fails (no network, GitHub blocked) the download still tries with
+     * the bundled engine instead of refusing to run.
+     */
+    private suspend fun ensureEngineUpdated() {
+        if (engineUpdateChecked || !YtDlpEngine.initialized) return
+        engineUpdateChecked = true
+        try {
+            YtDlpEngine.updateEngine(appContext)
+            ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
+        } catch (_: Exception) {
+            // Silent — the caller proceeds with the bundled engine.
         }
     }
 
@@ -255,6 +278,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         message = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Newest engine first, so the format list matches what
+                // the download will actually be able to fetch.
+                ensureEngineUpdated()
                 val info = YtDlpEngine.getInfo(url)
                 withContext(Dispatchers.Main) {
                     videoInfo = info
@@ -341,8 +367,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             qualityLabel = qualityLabel,
             formatSelector = formatSelector,
             fileName = fileName,
-            displayName = displayName,
-            retriedAfterUpdate = false
+            displayName = displayName
         )
     }
 
@@ -351,14 +376,16 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         qualityLabel: String,
         formatSelector: String,
         fileName: String,
-        displayName: String,
-        retriedAfterUpdate: Boolean
+        displayName: String
     ) {
         val processId = "videox_${System.currentTimeMillis()}"
         viewModelScope.launch(Dispatchers.IO) {
             queueSemaphore.acquire()
             var rowId = -1L
             try {
+                // Engine first: the bundled yt-dlp is too old for
+                // YouTube (SABR 403) — update it before the first download.
+                ensureEngineUpdated()
                 val item = DownloadItem(
                     url = url,
                     fileName = displayName,
@@ -375,64 +402,102 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     videoInfo = null
                     selectedQualityHeight = null
                 }
-                val response = YtDlpEngine.download(
-                    url = url,
-                    formatSelector = formatSelector,
-                    audioOnly = audioOnly,
-                    audioFormat = audioFormat,
-                    outputBaseName = fileName,
-                    processId = processId
-                ) { progress, eta ->
-                    viewModelScope.launch {
-                        if (rowId > 0) repository.updateYtProgress(rowId, progress.toInt(), 0L, 0L)
+                val attempts = QualitySelector.downloadAttempts(url)
+                var attemptIndex = 0
+                var engineRetried = false
+                var lastErr: String? = null
+                var done = false
+                while (attemptIndex < attempts.size && !done) {
+                    val args = attempts[attemptIndex]
+                    val isFallback = attemptIndex > 0
+                    if (isFallback) {
+                        // Drop the full-quality attempt's partial files so
+                        // the 360p attempt starts clean instead of trying
+                        // to resume the wrong format's .part.
+                        YtDlpEngine.downloadDir().listFiles()
+                            ?.filter { it.name.startsWith(fileName) && it.name.endsWith(".part") }
+                            ?.forEach { it.delete() }
                         withContext(Dispatchers.Main) {
-                            activeEtaText = if (eta > 0) "ETA ${eta}s" else null
+                            showMessage("Full quality is blocked — trying the basic (360p) download…")
+                        }
+                    }
+                    try {
+                        val response = YtDlpEngine.download(
+                            url = url,
+                            formatSelector = formatSelector,
+                            audioOnly = audioOnly,
+                            audioFormat = audioFormat,
+                            outputBaseName = fileName,
+                            extractorArgs = args,
+                            processId = processId
+                        ) { progress, eta ->
+                            viewModelScope.launch {
+                                if (rowId > 0) repository.updateYtProgress(rowId, progress.toInt(), 0L, 0L)
+                                withContext(Dispatchers.Main) {
+                                    activeEtaText = if (eta > 0) "ETA ${eta}s" else null
+                                }
+                            }
+                        }
+                        // yt-dlp finished without throwing — check the file actually exists.
+                        // (.part files don't count: a failed download leaves them behind.)
+                        val expected = File(YtDlpEngine.downloadDir(), displayName)
+                        val found = expected.exists() || YtDlpEngine.downloadDir().listFiles()
+                            ?.any { it.name.startsWith(fileName) && !it.name.endsWith(".part") } == true
+                        if (found) {
+                            if (rowId > 0) repository.markYtStatus(rowId, "COMPLETED", null)
+                            val suffix = if (isFallback) {
+                                " — only 360p was available; YouTube blocked the higher quality."
+                            } else ""
+                            withContext(Dispatchers.Main) {
+                                showMessage("Download finished: $displayName$suffix")
+                            }
+                            done = true
+                        } else {
+                            // No file, no exception — try the next attempt.
+                            lastErr = response.err?.takeIf { it.isNotBlank() }
+                                ?: response.out
+                                ?: "yt-dlp finished but no file was created."
+                            attemptIndex++
+                        }
+                    } catch (e: Exception) {
+                        val errText = e.message ?: "yt-dlp reported an error."
+                        val looksBlocked = errText.contains("403") ||
+                            errText.contains("not available") ||
+                            errText.contains("bot", ignoreCase = true)
+                        if (attemptIndex == 0 && !engineRetried && looksBlocked) {
+                            // First attempt blocked: update the engine once
+                            // and retry the full-quality attempt.
+                            withContext(Dispatchers.Main) {
+                                showMessage("YouTube blocked this download — updating the yt-dlp engine and retrying…")
+                            }
+                            try {
+                                YtDlpEngine.updateEngine(appContext)
+                                ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
+                            } catch (_: Exception) {
+                                // Update failed — the retry still tries.
+                            }
+                            engineRetried = true
+                            // attemptIndex stays 0: retry full quality once.
+                        } else {
+                            lastErr = errText
+                            attemptIndex++
                         }
                     }
                 }
-                // yt-dlp finished without throwing — check the file actually exists.
-                val expected = File(YtDlpEngine.downloadDir(), displayName)
-                val found = expected.exists() || YtDlpEngine.downloadDir().listFiles()
-                    ?.any { it.name.startsWith(fileName) } == true
-                if (found) {
-                    if (rowId > 0) repository.markYtStatus(rowId, "COMPLETED", null)
-                    withContext(Dispatchers.Main) { showMessage("Download finished: $displayName") }
-                } else {
-                    // Show the FULL error (yt-dlp logs to stderr): the old
-                    // 200-char cut hid the real reason from the user.
-                    val err = response.err?.takeIf { it.isNotBlank() }
-                        ?: response.out
-                        ?: "yt-dlp finished but no file was created."
+                if (!done) {
+                    // Every attempt failed — show the FULL last error
+                    // (yt-dlp logs to stderr); the old 200-char cut hid
+                    // the real reason from the user.
+                    val err = lastErr ?: "yt-dlp reported an error."
                     if (rowId > 0) repository.markYtStatus(rowId, "FAILED", err.take(200))
-                    withContext(Dispatchers.Main) { showMessage("Download failed: ${err.take(1000)}", isError = true) }
+                    withContext(Dispatchers.Main) {
+                        showMessage("Download failed: ${err.take(1000)}", isError = true)
+                    }
                 }
             } catch (e: Exception) {
+                // Only reached for errors outside the attempt loop
+                // (queue insert, engine check): report honestly.
                 val errText = e.message ?: "yt-dlp reported an error."
-                if (!retriedAfterUpdate && errText.contains("403")) {
-                    // YouTube blocked the old engine (SABR 403): update
-                    // yt-dlp once and retry this download automatically.
-                    if (rowId > 0) repository.markYtStatus(rowId, "FAILED", "403 — updating engine, retrying.")
-                    withContext(Dispatchers.Main) {
-                        showMessage("YouTube blocked this download (403) — updating the yt-dlp engine and retrying…")
-                    }
-                    try {
-                        YtDlpEngine.updateEngine(appContext)
-                        ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
-                    } catch (_: Exception) {
-                        // Update failed — the retry below still tries the
-                        // Android player client; if it fails too, the
-                        // normal error path reports it.
-                    }
-                    runYtDlpDownload(
-                        url = url,
-                        qualityLabel = qualityLabel,
-                        formatSelector = formatSelector,
-                        fileName = fileName,
-                        displayName = displayName,
-                        retriedAfterUpdate = true
-                    )
-                    return@launch
-                }
                 if (rowId > 0) repository.markYtStatus(rowId, "FAILED", errText.take(200))
                 withContext(Dispatchers.Main) {
                     showMessage("Download failed: $errText", isError = true)
