@@ -50,10 +50,17 @@ object QualitySelector {
     /** The highest genuinely available video height, or null if none. */
     fun maxHeight(formats: List<YtFormat>): Int? = availableHeights(formats).firstOrNull()
 
-    /** Honest one-line summary of the best quality on offer. */
+    /**
+     * Honest one-line summary of the best quality on offer. When the
+     * source offers formats but no resolution is known (direct media
+     * files, embedded page videos), that is "Original quality" — never
+     * "No video formats found", which would be a lie about a file that
+     * IS downloadable.
+     */
     fun maxQualityLabel(formats: List<YtFormat>): String {
-        val max = maxHeight(formats) ?: return "No video formats found"
-        return "Max available: ${qualityLabel(max)}"
+        val max = maxHeight(formats)
+        if (max != null) return "Max available: ${qualityLabel(max)}"
+        return if (formats.isNotEmpty()) "Original quality" else "No video formats found"
     }
 
     /**
@@ -108,6 +115,104 @@ object QualitySelector {
         return videoSize + audioSize
     }
 
+    /** True for YouTube watch / Shorts / youtu.be links. */
+    fun isYouTubeUrl(rawUrl: String): Boolean {
+        val lower = rawUrl.lowercase()
+        return lower.contains("youtube.com") || lower.contains("youtu.be")
+    }
+
+    /** Direct media file extensions VideoX can save as-is (video + audio). */
+    val DIRECT_MEDIA_EXTENSIONS = listOf(
+        "mp4", "webm", "mov", "m4v", "3gp", "mkv", "ogv",
+        "m4a", "mp3", "wav", "ogg", "flac"
+    )
+
+    /**
+     * True when the URL path ends in a direct media extension
+     * (query strings and fragments ignored, case-insensitive).
+     * This is a FAST-PATH hint only — it never decides whether a link
+     * is downloadable. Extension-less direct files are detected by
+     * content-type probing instead, and every other link goes to yt-dlp.
+     */
+    fun hasDirectMediaExtension(rawUrl: String): Boolean {
+        val path = rawUrl.trim().substringBefore("?").substringBefore("#").lowercase()
+        return DIRECT_MEDIA_EXTENSIONS.any { path.endsWith(".$it") }
+    }
+
+    /** File extension for a media content-type, or null when unknown. */
+    fun extensionForContentType(contentType: String?): String? {
+        val ct = contentType?.trim()?.lowercase()?.substringBefore(";")?.trim() ?: return null
+        return when (ct) {
+            "video/mp4" -> "mp4"
+            "video/webm" -> "webm"
+            "video/quicktime" -> "mov"
+            "video/x-matroska", "video/matroska" -> "mkv"
+            "video/3gpp", "video/3gpp2" -> "3gp"
+            "video/ogg", "video/ogv" -> "ogv"
+            "audio/mpeg", "audio/mp3" -> "mp3"
+            "audio/mp4", "audio/x-m4a" -> "m4a"
+            "audio/ogg" -> "ogg"
+            "audio/wav", "audio/x-wav" -> "wav"
+            "audio/flac", "audio/x-flac" -> "flac"
+            "audio/webm" -> "webm"
+            else -> null
+        }
+    }
+
+    /**
+     * The Android-player-client fallback, used ONLY when the user
+     * explicitly chooses it after full quality was blocked. The Android
+     * client offers only format 18 (360p, combined) for most videos —
+     * verified against real yt-dlp — so this is honestly a 360p
+     * fallback, never a silent downgrade.
+     */
+    const val ANDROID_FALLBACK_ARGS = "youtube:player_client=android"
+    const val ANDROID_FALLBACK_SELECTOR = "best"
+
+    /**
+     * Turn a raw yt-dlp / engine error into an accurate, user-facing
+     * explanation. Never a generic "this link is not supported": each
+     * known failure says what actually happened, and an unknown error
+     * is shown as-is instead of being replaced by a restriction message.
+     */
+    fun describeYtDlpError(raw: String?): String {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty()) return "yt-dlp reported an error."
+        val lower = text.lowercase()
+        return when {
+            lower.contains("not a bot") || lower.contains("sign in to confirm") ->
+                "YouTube is asking for a bot check (sign-in) for this video. " +
+                    "VideoX never signs in or uses your account, so this video can't be downloaded right now. " +
+                    "Try again later, or try a different video."
+            lower.contains("impersonat") ->
+                "This site needs a browser check this app can't perform, so it can't be downloaded right now."
+            lower.contains("logged-in") || lower.contains("login required") ||
+                lower.contains("log in to") || lower.contains("private video") ||
+                lower.contains("this video is private") ->
+                "This video needs a login or is private. VideoX never asks for your password or account, " +
+                    "so it can't download this one."
+            lower.contains("403") ->
+                "The site refused this request (HTTP 403). YouTube changes its delivery often — " +
+                    "updating the yt-dlp engine in Settings sometimes fixes it. Try again later if it persists."
+            lower.contains("unsupported url") ->
+                "This link isn't a single video page VideoX recognises. Copy the link to the video itself " +
+                    "(not a channel, playlist or search page) and try again."
+            lower.contains("video unavailable") || lower.contains("has been removed") ||
+                lower.contains("has been deleted") || lower.contains("404") ||
+                lower.contains("not found") ->
+                "This video is unavailable, removed or deleted."
+            lower.contains("requested format is not available") || lower.contains("format is not available") ->
+                "The quality you picked isn't available for this video. Pick another quality from the list."
+            lower.contains("unable to download webpage") || lower.contains("name or service not known") ||
+                lower.contains("connection") || lower.contains("timed out") ||
+                lower.contains("network is unreachable") || lower.contains("no route to host") ->
+                "Couldn't reach the site — check your internet connection and try again."
+            lower.contains("no video formats") ->
+                "No downloadable video was found on this page."
+            else -> text
+        }
+    }
+
     /**
      * Download attempts for a video, in order. Each entry is the value
      * for yt-dlp's `--extractor-args`, or null for yt-dlp's DEFAULT
@@ -121,16 +226,13 @@ object QualitySelector {
      *   18 (360p) survives — that was the v2.2/v2.3 bug: 4K shown, 360p
      *   downloaded. The Android client on its own offers ONLY 360p.
      * So: default clients first (full quality), Android client only as
-     * a LAST resort that at least downloads something (360p, honestly
-     * reported as such).
+     * an EXPLICIT last resort the user chooses (360p, honestly labelled).
      */
     fun downloadAttempts(url: String): List<String?> {
-        val lower = url.lowercase()
-        val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
-        return if (isYouTube) {
+        return if (isYouTubeUrl(url)) {
             listOf(
                 null, // yt-dlp defaults: android, web_safari, web — full quality
-                "youtube:player_client=android" // last resort: 360p only
+                ANDROID_FALLBACK_ARGS // explicit fallback only: 360p
             )
         } else {
             listOf(null) // other sites: one attempt, defaults only
