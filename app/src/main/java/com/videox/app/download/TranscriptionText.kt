@@ -12,7 +12,8 @@ object TranscriptionText {
      * Extract the recognised text from one Vosk result JSON string,
      * e.g. {"text": "hello world"}. Returns null when the JSON has no
      * usable "text" value (malformed input, missing key). JSON string
-     * escapes (\" \\ \/ \n \r \t \b \f \uXXXX) are decoded.
+     * escapes (quote, backslash, slash, newline, tab, and backslash-u
+     * four-hex-digit codes) are decoded.
      */
     fun textFromVoskJson(json: String?): String? {
         if (json.isNullOrBlank()) return null
