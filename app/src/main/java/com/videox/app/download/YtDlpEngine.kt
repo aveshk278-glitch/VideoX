@@ -98,9 +98,11 @@ object YtDlpEngine {
     }
 
     /** Fetch title + available formats for a URL. Runs yt-dlp --dump-json. */
-    fun getInfo(url: String): YtVideoInfo {
+    fun getInfo(url: String, proxyUrl: String? = null): YtVideoInfo {
         if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
-        return mapVideoInfo(YoutubeDL.getInstance().getInfo(url), url)
+        val request = YoutubeDLRequest(url)
+        proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
+        return mapVideoInfo(YoutubeDL.getInstance().getInfo(request), url)
     }
 
     /**
@@ -109,10 +111,11 @@ object YtDlpEngine {
      * getInfo(YoutubeDLRequest) overload — verified to exist in
      * youtubedl-android 0.18.1 via javap on the real AAR.
      */
-    fun getInfoWithArgs(url: String, extractorArgs: String): YtVideoInfo {
+    fun getInfoWithArgs(url: String, extractorArgs: String, proxyUrl: String? = null): YtVideoInfo {
         if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
         val request = YoutubeDLRequest(url)
         request.addOption("--extractor-args", extractorArgs)
+        proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
         return mapVideoInfo(YoutubeDL.getInstance().getInfo(request), url)
     }
 
@@ -122,13 +125,14 @@ object YtDlpEngine {
      * simulate mode. True means the user can be offered the 360p
      * download as an explicit choice; false means there is no fallback.
      */
-    fun probeFallback(url: String): Boolean {
+    fun probeFallback(url: String, proxyUrl: String? = null): Boolean {
         if (!initialized) return false
         return try {
             val request = YoutubeDLRequest(url)
             request.addOption("--simulate")
             request.addOption("-f", QualitySelector.ANDROID_FALLBACK_SELECTOR)
             request.addOption("--extractor-args", QualitySelector.ANDROID_FALLBACK_ARGS)
+            proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
             YoutubeDL.getInstance().execute(request, "videox_probe_${System.currentTimeMillis()}")
             true
         } catch (_: Exception) {
@@ -192,6 +196,9 @@ object YtDlpEngine {
      * "bestvideo[height<=1080]+bestaudio/best"). It always pairs video
      * with the best audio stream so the merged file has sound — a raw
      * video-only format id must NEVER be passed here on its own.
+     * [proxyUrl] is the user's proxy setting, already validated by the
+     * caller (blank means no proxy). [extraOptions] are the subtitle
+     * and chapter options built by [QualitySelector.extraDownloadOptions].
      * [onProgress] receives percent (0-100) and ETA seconds.
      * Returns the YoutubeDLResponse when the process finishes.
      * Cancel with [cancel] using the same [processId].
@@ -204,6 +211,8 @@ object YtDlpEngine {
         outputBaseName: String,
         extractorArgs: String?,
         processId: String,
+        proxyUrl: String? = null,
+        extraOptions: List<Pair<String, String?>> = emptyList(),
         onProgress: (Float, Long) -> Unit
     ): YoutubeDLResponse {
         if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
@@ -215,6 +224,9 @@ object YtDlpEngine {
         request.addOption("-o", File(dir, "$outputBaseName.%(ext)s").absolutePath)
         // Never overwrite without asking: yt-dlp resumes partial files by default.
         request.addOption("--no-overwrites")
+        // User's proxy, when one is set in Settings. The caller only
+        // passes a valid proxy URL, so this never breaks downloads.
+        proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
         // Extractor args override yt-dlp's default YouTube clients — only
         // pass them for the last-resort (Android-only, 360p) attempt.
         // Null means "use yt-dlp's defaults" (android, web_safari, web),
@@ -232,6 +244,11 @@ object YtDlpEngine {
         }
         // merge-output-format needs FFmpeg (bundled ffmpeg module).
         request.addOption("--merge-output-format", "mp4")
+        // Subtitle and chapter options from Settings. A null value is a
+        // flag-only option (e.g. --embed-subs); otherwise option + value.
+        extraOptions.forEach { (option, value) ->
+            if (value == null) request.addOption(option) else request.addOption(option, value)
+        }
         // NOTE: in youtubedl-android 0.18.1 the signature is
         // execute(request, processId, callback) and the callback takes
         // (progressPercent, etaSeconds, statusText).
