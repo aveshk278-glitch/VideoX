@@ -94,6 +94,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     var ytdlpReady by mutableStateOf(false)
         private set
 
+    /** Bundled/updated yt-dlp version, e.g. "2025.11.12". Shown in Settings. */
+    var ytDlpVersion by mutableStateOf<String?>(null)
+        private set
+
+    var updatingEngine by mutableStateOf(false)
+        private set
+
     private var queueSemaphore = Semaphore(maxConcurrent)
 
     init {
@@ -120,6 +127,40 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     // Polling must never crash the UI; the next tick retries.
                 }
                 delay(1_500)
+            }
+        }
+        // Read the yt-dlp version for Settings once the engine is ready.
+        viewModelScope.launch(Dispatchers.IO) {
+            var waited = 0
+            while (!YtDlpEngine.initialized && waited < 20) {
+                delay(500)
+                waited++
+            }
+            ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
+        }
+    }
+
+    /** Manual engine update from Settings. Shows the result to the user. */
+    fun updateYtDlpEngine() {
+        if (updatingEngine || !YtDlpEngine.initialized) return
+        updatingEngine = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val status = YtDlpEngine.updateEngine(appContext)
+                ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
+                withContext(Dispatchers.Main) {
+                    updatingEngine = false
+                    if (status == "DONE") {
+                        showMessage("yt-dlp updated to v${ytDlpVersion ?: "?"} — try your download again.")
+                    } else {
+                        showMessage("yt-dlp is already up to date (v${ytDlpVersion ?: "?"}).")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    updatingEngine = false
+                    showMessage("Could not update yt-dlp: ${e.message ?: "check your internet and try again."}", isError = true)
+                }
             }
         }
     }
@@ -297,6 +338,24 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             YtDlpEngine.sanitizeFileName(customFileName)
         }
         val displayName = fileName + if (audioOnly) ".$audioFormat" else ".mp4"
+        runYtDlpDownload(
+            url = url,
+            qualityLabel = qualityLabel,
+            formatSelector = formatSelector,
+            fileName = fileName,
+            displayName = displayName,
+            retriedAfterUpdate = false
+        )
+    }
+
+    private fun runYtDlpDownload(
+        url: String,
+        qualityLabel: String,
+        formatSelector: String,
+        fileName: String,
+        displayName: String,
+        retriedAfterUpdate: Boolean
+    ) {
         val processId = "videox_${System.currentTimeMillis()}"
         viewModelScope.launch(Dispatchers.IO) {
             queueSemaphore.acquire()
@@ -346,9 +405,35 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     withContext(Dispatchers.Main) { showMessage("Download failed: ${err.take(200)}", isError = true) }
                 }
             } catch (e: Exception) {
-                if (rowId > 0) repository.markYtStatus(rowId, "FAILED", e.message?.take(200))
+                val errText = e.message ?: "yt-dlp reported an error."
+                if (!retriedAfterUpdate && errText.contains("403")) {
+                    // YouTube blocked the old engine (SABR 403): update
+                    // yt-dlp once and retry this download automatically.
+                    if (rowId > 0) repository.markYtStatus(rowId, "FAILED", "403 — updating engine, retrying.")
+                    withContext(Dispatchers.Main) {
+                        showMessage("YouTube blocked this download (403) — updating the yt-dlp engine and retrying…")
+                    }
+                    try {
+                        YtDlpEngine.updateEngine(appContext)
+                        ytDlpVersion = YtDlpEngine.ytDlpVersion(appContext)
+                    } catch (_: Exception) {
+                        // Update failed — the retry below still tries the
+                        // Android player client; if it fails too, the
+                        // normal error path reports it.
+                    }
+                    runYtDlpDownload(
+                        url = url,
+                        qualityLabel = qualityLabel,
+                        formatSelector = formatSelector,
+                        fileName = fileName,
+                        displayName = displayName,
+                        retriedAfterUpdate = true
+                    )
+                    return@launch
+                }
+                if (rowId > 0) repository.markYtStatus(rowId, "FAILED", errText.take(200))
                 withContext(Dispatchers.Main) {
-                    showMessage("Download failed: ${e.message ?: "yt-dlp reported an error."}", isError = true)
+                    showMessage("Download failed: $errText", isError = true)
                 }
             } finally {
                 queueSemaphore.release()
