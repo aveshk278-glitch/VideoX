@@ -208,10 +208,10 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("About VideoX", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Version 2.7  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
+                Text("Version 2.8  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "VideoX 2.7 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. It does not bypass DRM, paywalls or logins, and never collects passwords.",
+                    "VideoX 2.8 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. It does not bypass DRM, paywalls or logins, and never collects passwords.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
