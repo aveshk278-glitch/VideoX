@@ -154,6 +154,7 @@ object YtDlpEngine {
         audioOnly: Boolean,
         audioFormat: String,
         outputBaseName: String,
+        extractorArgs: String?,
         processId: String,
         onProgress: (Float, Long) -> Unit
     ): YoutubeDLResponse {
@@ -166,11 +167,13 @@ object YtDlpEngine {
         request.addOption("-o", File(dir, "$outputBaseName.%(ext)s").absolutePath)
         // Never overwrite without asking: yt-dlp resumes partial files by default.
         request.addOption("--no-overwrites")
-        // YouTube SABR workaround (yt-dlp #12482): the Android player
-        // client is not forced into SABR, so its formats keep real URLs.
-        QualitySelector.extractorArgsFor(url)?.let {
-            request.addOption("--extractor-args", it)
-        }
+        // Extractor args override yt-dlp's default YouTube clients — only
+        // pass them for the last-resort (Android-only, 360p) attempt.
+        // Null means "use yt-dlp's defaults" (android, web_safari, web),
+        // which is what selects full quality. NEVER force
+        // player_client=android,web here: it drops web_safari and the
+        // download collapses to 360p (verified, v2.2/v2.3 bug).
+        extractorArgs?.let { request.addOption("--extractor-args", it) }
         if (audioOnly) {
             request.addOption("-f", "bestaudio/best")
             request.addOption("--extract-audio")
