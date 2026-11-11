@@ -1,4 +1,4 @@
-# VideoX 2.6 — Android Video & Audio Downloader
+# VideoX 2.7 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
