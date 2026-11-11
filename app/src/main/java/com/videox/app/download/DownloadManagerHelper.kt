@@ -63,7 +63,7 @@ object DownloadManagerHelper {
      * Ask the server what a URL actually is (HEAD, with a Range-GET
      * fallback for servers that refuse HEAD). Follows redirects.
      * Returns a probe only when the response is a real media file
-     * (video/* or audio/*) — this is how extension-less direct links
+     * (a video or audio content-type) — this is how extension-less direct links
      * (CDN / signed URLs) are detected. Returns null for web pages,
      * errors, or anything that is not media. Call on a background thread.
      */
