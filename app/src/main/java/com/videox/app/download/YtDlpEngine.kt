@@ -140,6 +140,71 @@ object YtDlpEngine {
         }
     }
 
+    /**
+     * Video-to-text extraction (v2.10): download ONLY the video's
+     * subtitles (manual subtitles plus auto-generated captions) as
+     * .srt files, without downloading the video itself. The caller
+     * converts them to clean .txt with [SubtitleText].
+     *
+     * Flags verified against real yt-dlp 2026.10.26 (2026-11-12):
+     * --skip-download + --write-subs + --write-auto-subs writes
+     * "<base>.<lang>.srt" files and no video file. When the video has
+     * no subtitles in the requested languages, yt-dlp prints "There
+     * are no subtitles for the requested languages", exits normally
+     * and writes nothing — the caller must check for created files
+     * instead of treating a clean exit as success.
+     */
+    fun extractSubtitles(
+        url: String,
+        outputBaseName: String,
+        subtitleLangs: String,
+        proxyUrl: String?,
+        processId: String
+    ): YoutubeDLResponse {
+        if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
+        val dir = downloadDir()
+        val request = YoutubeDLRequest(url)
+        request.addOption("--skip-download")
+        request.addOption("--write-subs")
+        request.addOption("--write-auto-subs")
+        request.addOption("--sub-langs", QualitySelector.sanitizeSubtitleLangs(subtitleLangs))
+        request.addOption("--sub-format", "srt")
+        request.addOption("--no-overwrites")
+        request.addOption("-o", File(dir, "$outputBaseName.%(ext)s").absolutePath)
+        proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
+        return YoutubeDL.getInstance().execute(request, processId)
+    }
+
+    /**
+     * Extract a video's audio as a 16 kHz mono 16-bit PCM WAV file for
+     * on-device transcription (v2.10). [outputFile] is the exact WAV
+     * path (a temp file in the app cache dir, deleted after use).
+     * Uses "bestaudio/best": the Android player client offers only a
+     * combined format for most videos, so plain "bestaudio" fails
+     * there (verified: "Requested format is not available"). The
+     * postprocessor args were verified against real yt-dlp 2026.10.26
+     * + FFmpeg: the output is pcm_s16le, 16000 Hz, 1 channel.
+     */
+    fun extractAudioWav(
+        url: String,
+        outputFile: File,
+        proxyUrl: String?,
+        processId: String
+    ): YoutubeDLResponse {
+        if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
+        val request = YoutubeDLRequest(url)
+        request.addOption("-f", "bestaudio/best")
+        request.addOption("--extract-audio")
+        request.addOption("--audio-format", "wav")
+        request.addOption("--postprocessor-args", "ffmpeg:-ar 16000 -ac 1")
+        request.addOption(
+            "-o",
+            File(outputFile.parentFile, "${outputFile.nameWithoutExtension}.%(ext)s").absolutePath
+        )
+        proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
+        return YoutubeDL.getInstance().execute(request, processId)
+    }
+
     private fun mapVideoInfo(info: VideoInfo, url: String): YtVideoInfo {
         val formats = (info.formats ?: emptyList()).mapNotNull { f ->
             val formatId = f.formatId ?: return@mapNotNull null
