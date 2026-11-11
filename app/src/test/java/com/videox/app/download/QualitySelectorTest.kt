@@ -133,4 +133,29 @@ class QualitySelectorTest {
         assertNull(QualitySelector.maxHeight(emptyList()))
         assertTrue(QualitySelector.availableHeights(emptyList()).isEmpty())
     }
+
+    @Test
+    fun `youtube urls get the android player client workaround`() {
+        // YouTube SABR 403 workaround (yt-dlp #12482): the Android player
+        // client is not forced into SABR, so its formats keep real URLs.
+        assertEquals(
+            "youtube:player_client=android,web",
+            QualitySelector.extractorArgsFor("https://www.youtube.com/watch?v=GwNctZ8sIAs")
+        )
+        assertEquals(
+            "youtube:player_client=android,web",
+            QualitySelector.extractorArgsFor("https://youtu.be/GwNctZ8sIAs")
+        )
+        assertEquals(
+            "youtube:player_client=android,web",
+            QualitySelector.extractorArgsFor("https://music.youtube.com/watch?v=abc123")
+        )
+    }
+
+    @Test
+    fun `non-youtube urls get no extractor args`() {
+        assertNull(QualitySelector.extractorArgsFor("https://example.com/video.mp4"))
+        assertNull(QualitySelector.extractorArgsFor("https://vimeo.com/123456"))
+        assertNull(QualitySelector.extractorArgsFor("https://www.facebook.com/watch?v=1"))
+    }
 }
