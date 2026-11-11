@@ -1,4 +1,4 @@
-# VideoX 2.10 — Android Video & Audio Downloader
+# VideoX 2.11 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -27,6 +27,15 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
+- **Premium redesign (v2.11):** the full UI was rebuilt on a premium design
+  system — exact purple/dark palette (#101019 background, #8050FF primary),
+  floating cards with soft shadows and subtle borders, gradient primary
+  actions, segmented controls, status pills, file-type tiles, a refined
+  type scale with 14–20dp rounded corners, and a floating bottom bar with
+  a gradient active pill. UI layer only: the download engine, URL logic,
+  settings, navigation and every feature work exactly as before. The Home
+  screen privacy notice card was removed at the user's request (the same
+  policy is documented in Settings > About).
 - **Video-to-text extraction (v2.10):** **Extract text from video** saves a
   video's subtitles/captions as a clean `.txt` file in `Downloads/VideoX`
   without downloading the video itself. Manual subtitles and auto-generated
