@@ -153,12 +153,12 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         queueSemaphore = Semaphore(maxConcurrent)
     }
 
-    fun setAudioOnly(value: Boolean) {
+    fun updateAudioOnly(value: Boolean) {
         audioOnly = value
         selectedFormat = null
     }
 
-    fun setAudioFormat(value: String) {
+    fun updateAudioFormat(value: String) {
         audioFormat = value
     }
 
