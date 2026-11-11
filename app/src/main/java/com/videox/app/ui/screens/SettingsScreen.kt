@@ -247,12 +247,36 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text("Subtitle languages", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Also decides which languages video-to-text extraction saves.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("en" to "English", "hi" to "Hindi", "all" to "All").forEach { (code, label) ->
                         OutlinedButton(onClick = { viewModel.updateSubtitleLangs(code) }) {
                             Text(if (viewModel.subtitleLangs == code) "● $label" else label)
                         }
                     }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Transcribe speech when there are no subtitles", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "When a video has no subtitles, VideoX recognises the speech on your phone instead, so text can be extracted from any video with spoken audio. The first transcription downloads a voice model once (about 40 MB, English or Hindi by the language choice above) and no audio ever leaves your phone. Automatic transcription can mishear a few words.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = viewModel.transcribeFallback,
+                        onCheckedChange = { viewModel.updateTranscribeFallback(it) }
+                    )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -334,10 +358,10 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("About VideoX", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Version 2.9  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
+                Text("Version 2.10  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "VideoX 2.9 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. New in 2.9: a warning before downloading on a metered connection, an optional proxy setting, subtitle embedding, chapter markers, settings backup and restore, and a cleaner Audio only screen that hides the video quality list. It does not bypass DRM, paywalls or logins, and never collects passwords.",
+                    "VideoX 2.10 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. New in 2.9: a warning before downloading on a metered connection, an optional proxy setting, subtitle embedding, chapter markers, settings backup and restore, and a cleaner Audio only screen. New in 2.10: video-to-text extraction — save a video's subtitles/captions as a clean .txt file without downloading the video, or transcribe the speech on your phone when the video has no subtitles, so text can be extracted from any video with spoken audio. It does not bypass DRM, paywalls or logins, and never collects passwords.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
