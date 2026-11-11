@@ -1,7 +1,7 @@
 package com.videox.app.download
 
 /**
- * Settings backup and restore (v2.9, from the Seal Roadmap board).
+ * Settings backup and restore (v2.9).
  *
  * Pure Kotlin with NO Android dependencies, so it is covered by plain
  * JVM unit tests (see SettingsBackupTest). The backup file is a flat
