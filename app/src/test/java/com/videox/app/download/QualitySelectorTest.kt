@@ -135,28 +135,20 @@ class QualitySelectorTest {
     }
 
     @Test
-    fun `youtube urls get the android player client workaround`() {
-        // YouTube SABR 403 workaround (yt-dlp #12482): the Android player
-        // client is not forced into SABR, so its formats keep real URLs.
-        assertEquals(
-            "youtube:player_client=android,web",
-            QualitySelector.extractorArgsFor("https://www.youtube.com/watch?v=GwNctZ8sIAs")
-        )
-        assertEquals(
-            "youtube:player_client=android,web",
-            QualitySelector.extractorArgsFor("https://youtu.be/GwNctZ8sIAs")
-        )
-        assertEquals(
-            "youtube:player_client=android,web",
-            QualitySelector.extractorArgsFor("https://music.youtube.com/watch?v=abc123")
-        )
+    fun `download attempts use defaults first and android only as last resort`() {
+        // Verified against real yt-dlp 2025.11.12: forcing
+        // player_client=android,web drops web_safari and the download
+        // collapses to format 18 (360p); defaults select 401+251 (4K).
+        val attempts = QualitySelector.downloadAttempts("https://youtu.be/GwNctZ8sIAs")
+        assertEquals(2, attempts.size)
+        assertNull(attempts[0]) // yt-dlp defaults (android, web_safari, web) — full quality
+        assertEquals("youtube:player_client=android", attempts[1])
     }
 
     @Test
-    fun `non-youtube urls get no extractor args`() {
-        assertNull(QualitySelector.extractorArgsFor("https://example.com/video.mp4"))
-        assertNull(QualitySelector.extractorArgsFor("https://vimeo.com/123456"))
-        assertNull(QualitySelector.extractorArgsFor("https://www.facebook.com/watch?v=1"))
+    fun `non-youtube urls get a single default attempt`() {
+        val attempts = QualitySelector.downloadAttempts("https://example.com/video.mp4")
+        assertEquals(listOf<String?>(null), attempts)
     }
 
     @Test
