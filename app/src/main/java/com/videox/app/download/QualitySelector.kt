@@ -107,4 +107,23 @@ object QualitySelector {
         val audioSize = if (video?.isVideoOnly == true) audio?.fileSize ?: 0L else 0L
         return videoSize + audioSize
     }
+
+    /**
+     * yt-dlp extractor args for a URL, or null when none are needed.
+     *
+     * YouTube now forces SABR streaming on its web client, which makes
+     * the bundled yt-dlp's web-client formats lose their URLs and fail
+     * with HTTP 403 (yt-dlp issue #12482). The Android player client is
+     * not forced into SABR, so asking for `android,web` gives working
+     * formats again. Only YouTube-family URLs get this flag; every other
+     * site is left untouched.
+     */
+    fun extractorArgsFor(url: String): String? {
+        val lower = url.lowercase()
+        return if (lower.contains("youtube.com") || lower.contains("youtu.be")) {
+            "youtube:player_client=android,web"
+        } else {
+            null
+        }
+    }
 }
