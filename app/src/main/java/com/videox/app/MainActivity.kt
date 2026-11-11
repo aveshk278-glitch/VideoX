@@ -14,11 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,13 +34,20 @@ import androidx.navigation.compose.rememberNavController
 import com.videox.app.ui.screens.DownloadsScreen
 import com.videox.app.ui.screens.HomeScreen
 import com.videox.app.ui.screens.SettingsScreen
+import com.videox.app.ui.theme.BottomBarItem
+import com.videox.app.ui.theme.PremiumBottomBar
 import com.videox.app.ui.theme.VideoXTheme
 import com.videox.app.ui.viewmodel.DownloaderViewModel
 
-sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    data object Home : Screen("home", "Home", Icons.Filled.Home)
-    data object Downloads : Screen("downloads", "Downloads", Icons.Filled.Download)
-    data object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
+sealed class Screen(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector
+) {
+    data object Home : Screen("home", "Home", Icons.Outlined.Home, Icons.Filled.Home)
+    data object Downloads : Screen("downloads", "Downloads", Icons.Outlined.Download, Icons.Filled.Download)
+    data object Settings : Screen("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -87,25 +93,22 @@ fun VideoXApp(viewModel: DownloaderViewModel) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                val backStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = backStackEntry?.destination?.route ?: Screen.Home.route
-                items.forEach { screen ->
-                    NavigationBarItem(
-                        selected = currentRoute == screen.route,
-                        onClick = {
-                            selectedRoute = screen.route
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(screen.icon, contentDescription = screen.label) },
-                        label = { Text(screen.label) }
-                    )
+            val backStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = backStackEntry?.destination?.route ?: Screen.Home.route
+            PremiumBottomBar(
+                items = items.map { screen ->
+                    BottomBarItem(screen.route, screen.label, screen.icon, screen.selectedIcon)
+                },
+                currentRoute = currentRoute,
+                onNavigate = { route ->
+                    selectedRoute = route
+                    navController.navigate(route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
-            }
+            )
         }
     ) { innerPadding ->
         NavHost(
