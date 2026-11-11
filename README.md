@@ -1,4 +1,4 @@
-# VideoX 2.1 — Android Video & Audio Downloader
+# VideoX 2.2 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -27,6 +27,13 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
+- **Self-updating yt-dlp engine (v2.2):** YouTube regularly changes its
+  streaming and blocks old yt-dlp versions with HTTP 403. VideoX now
+  updates its engine to the latest stable yt-dlp when the app starts, uses
+  the Android player client for YouTube (which YouTube does not force into
+  SABR streaming), and if a download still fails with 403 it updates the
+  engine and retries once automatically. **Settings → Update yt-dlp engine**
+  does the same manually and shows the current engine version.
 - **HD quality selection (v2.1):** after pasting a link, tap **Formats** and
   VideoX shows every resolution the source genuinely offers — 144p, 240p,
   360p, 480p, 720p HD, 1080p Full HD, 1440p 2K, 2160p 4K — plus **Best Quality
