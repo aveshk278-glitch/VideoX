@@ -314,4 +314,111 @@ class QualitySelectorTest {
         assertTrue(msg.contains("already downloaded"))
         assertTrue(msg.contains("Downloads tab"))
     }
+
+    // ---- v2.9: Seal Roadmap features ----
+
+    @Test
+    fun `isValidProxyUrl accepts http https and socks5 proxies`() {
+        assertTrue(QualitySelector.isValidProxyUrl("http://127.0.0.1:8080"))
+        assertTrue(QualitySelector.isValidProxyUrl("https://proxy.example.com:3128"))
+        assertTrue(QualitySelector.isValidProxyUrl("socks5://127.0.0.1:1080"))
+        assertTrue(QualitySelector.isValidProxyUrl("http://proxy.example.com"))
+        assertTrue(QualitySelector.isValidProxyUrl("http://user:pass@proxy.example.com:8080"))
+    }
+
+    @Test
+    fun `isValidProxyUrl rejects blanks bad schemes and bad ports`() {
+        assertFalse(QualitySelector.isValidProxyUrl(""))
+        assertFalse(QualitySelector.isValidProxyUrl("   "))
+        assertFalse(QualitySelector.isValidProxyUrl("proxy.example.com:8080"))
+        assertFalse(QualitySelector.isValidProxyUrl("ftp://proxy.example.com:21"))
+        assertFalse(QualitySelector.isValidProxyUrl("http://"))
+        assertFalse(QualitySelector.isValidProxyUrl("http://proxy.example.com:99999"))
+        assertFalse(QualitySelector.isValidProxyUrl("http://proxy.example.com:abc"))
+        assertFalse(QualitySelector.isValidProxyUrl("http://proxy .example.com:8080"))
+    }
+
+    @Test
+    fun `sanitizeSubtitleLangs normalises codes and falls back to en`() {
+        assertEquals("en", QualitySelector.sanitizeSubtitleLangs("en"))
+        assertEquals("en,hi", QualitySelector.sanitizeSubtitleLangs("EN, HI"))
+        assertEquals("all", QualitySelector.sanitizeSubtitleLangs("ALL"))
+        assertEquals("en", QualitySelector.sanitizeSubtitleLangs(""))
+        assertEquals("en", QualitySelector.sanitizeSubtitleLangs("1234"))
+        assertEquals("en", QualitySelector.sanitizeSubtitleLangs("e"))
+    }
+
+    @Test
+    fun `extraDownloadOptions adds subtitle and chapter flags for video`() {
+        val options = QualitySelector.extraDownloadOptions(
+            subtitlesEnabled = true,
+            subtitleLangs = "en",
+            embedChapters = true,
+            audioOnly = false
+        )
+        assertEquals(
+            listOf(
+                "--embed-subs" to null,
+                "--write-auto-subs" to null,
+                "--sub-langs" to "en",
+                "--embed-chapters" to null
+            ),
+            options
+        )
+    }
+
+    @Test
+    fun `extraDownloadOptions skips subtitles for audio-only but keeps chapters`() {
+        val options = QualitySelector.extraDownloadOptions(
+            subtitlesEnabled = true,
+            subtitleLangs = "hi",
+            embedChapters = true,
+            audioOnly = true
+        )
+        assertEquals(listOf("--embed-chapters" to null), options)
+    }
+
+    @Test
+    fun `extraDownloadOptions is empty when everything is off`() {
+        val options = QualitySelector.extraDownloadOptions(
+            subtitlesEnabled = false,
+            subtitleLangs = "en",
+            embedChapters = false,
+            audioOnly = false
+        )
+        assertTrue(options.isEmpty())
+    }
+
+    @Test
+    fun `extraDownloadOptions sanitises the subtitle languages`() {
+        val options = QualitySelector.extraDownloadOptions(
+            subtitlesEnabled = true,
+            subtitleLangs = "garbage!!",
+            embedChapters = false,
+            audioOnly = false
+        )
+        assertTrue(options.contains("--sub-langs" to "en"))
+    }
+
+    @Test
+    fun `shouldWarnMetered only warns on a metered network with the warning on`() {
+        assertTrue(QualitySelector.shouldWarnMetered(metered = true, warnEnabled = true))
+        assertFalse(QualitySelector.shouldWarnMetered(metered = false, warnEnabled = true))
+        assertFalse(QualitySelector.shouldWarnMetered(metered = true, warnEnabled = false))
+        assertFalse(QualitySelector.shouldWarnMetered(metered = false, warnEnabled = false))
+    }
+
+    @Test
+    fun `describeYtDlpError points at the proxy when one is configured`() {
+        val withProxy = QualitySelector.describeYtDlpError(
+            "ERROR: Unable to download API page: [Errno 111] Connection refused",
+            proxyConfigured = true
+        )
+        assertTrue(withProxy.contains("proxy"))
+        val withoutProxy = QualitySelector.describeYtDlpError(
+            "ERROR: Unable to download API page: [Errno 111] Connection refused",
+            proxyConfigured = false
+        )
+        assertFalse(withoutProxy.contains("proxy"))
+    }
 }
