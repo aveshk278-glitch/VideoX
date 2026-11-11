@@ -1,4 +1,4 @@
-# VideoX 2.11 — Android Video & Audio Downloader
+# VideoX 2.12 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -27,6 +27,12 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
+- **New app logo (v2.12):** the launcher icon was redesigned to match the
+  premium identity — a white play triangle with a download arrow cut
+  through it, on the app's purple gradient (#8F63FF → #6A3DF0). The icon
+  is a vector adaptive icon (foreground + gradient background), so it
+  stays sharp at every size and on round/square masks. The app name
+  stays **VideoX**.
 - **Premium redesign (v2.11):** the full UI was rebuilt on a premium design
   system — exact purple/dark palette (#101019 background, #8050FF primary),
   floating cards with soft shadows and subtle borders, gradient primary
