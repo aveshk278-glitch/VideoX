@@ -1,6 +1,7 @@
 package com.videox.app.download
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -163,5 +164,90 @@ class QualitySelectorTest {
         assertEquals("my_clip", QualitySelector.resolveOutputBaseName("Some Title!", "my_clip"))
         assertEquals("Some Title_", QualitySelector.resolveOutputBaseName("Some Title!", ""))
         assertEquals("Some Title_", QualitySelector.resolveOutputBaseName("Some Title!", null))
+    }
+
+    @Test
+    fun `isYouTubeUrl recognises youtube links only`() {
+        assertTrue(QualitySelector.isYouTubeUrl("https://www.youtube.com/watch?v=abc"))
+        assertTrue(QualitySelector.isYouTubeUrl("https://youtu.be/abc"))
+        assertTrue(QualitySelector.isYouTubeUrl("https://music.youtube.com/watch?v=abc"))
+        assertFalse(QualitySelector.isYouTubeUrl("https://vimeo.com/123"))
+        assertFalse(QualitySelector.isYouTubeUrl("https://example.com/video.mp4"))
+    }
+
+    @Test
+    fun `hasDirectMediaExtension accepts media files and ignores query strings`() {
+        assertTrue(QualitySelector.hasDirectMediaExtension("https://example.com/video.mp4"))
+        assertTrue(QualitySelector.hasDirectMediaExtension("https://example.com/clip.WEBM"))
+        assertTrue(QualitySelector.hasDirectMediaExtension("https://example.com/a/b.mkv?token=xyz"))
+        assertTrue(QualitySelector.hasDirectMediaExtension("https://example.com/song.mp3"))
+        assertTrue(QualitySelector.hasDirectMediaExtension("https://example.com/v.ogv"))
+        assertFalse(QualitySelector.hasDirectMediaExtension("https://example.com/watch?v=1"))
+        assertFalse(QualitySelector.hasDirectMediaExtension("https://example.com/video.mp4.html"))
+        assertFalse(QualitySelector.hasDirectMediaExtension("https://example.com/page"))
+    }
+
+    @Test
+    fun `extensionForContentType maps media types`() {
+        assertEquals("mp4", QualitySelector.extensionForContentType("video/mp4"))
+        assertEquals("webm", QualitySelector.extensionForContentType("video/webm; charset=utf-8"))
+        assertEquals("mov", QualitySelector.extensionForContentType("video/quicktime"))
+        assertEquals("mkv", QualitySelector.extensionForContentType("video/x-matroska"))
+        assertEquals("mp3", QualitySelector.extensionForContentType("audio/mpeg"))
+        assertEquals("m4a", QualitySelector.extensionForContentType("audio/mp4"))
+        assertNull(QualitySelector.extensionForContentType("text/html"))
+        assertNull(QualitySelector.extensionForContentType(null))
+    }
+
+    @Test
+    fun `maxQualityLabel says Original quality when resolutions are unknown`() {
+        // Mirrors real yt-dlp output for a direct WebM / embedded video:
+        // formats exist, but height is unknown (0).
+        val direct = listOf(
+            YtFormat("webm", "webm", "", 0, "Video • webm", 0L, false, false, "", ""),
+            YtFormat("mp4", "mp4", "", 0, "Video • mp4", 0L, false, false, "", "")
+        )
+        assertEquals("Original quality", QualitySelector.maxQualityLabel(direct))
+        assertTrue(QualitySelector.availableHeights(direct).isEmpty())
+        assertNull(QualitySelector.maxHeight(direct))
+        assertEquals("No video formats found", QualitySelector.maxQualityLabel(emptyList()))
+        // A requested height with no known heights falls back to Best Quality.
+        assertNull(QualitySelector.clampHeight(direct, 1080))
+    }
+
+    @Test
+    fun `describeYtDlpError maps known failures to accurate messages`() {
+        val bot = QualitySelector.describeYtDlpError("ERROR: [youtube] x: Sign in to confirm you're not a bot.")
+        assertTrue(bot.contains("bot check"))
+        assertTrue(bot.contains("never signs in"))
+        val login = QualitySelector.describeYtDlpError("[vimeo] 1: The web client only works when logged-in.")
+        assertTrue(login.contains("needs a login"))
+        assertTrue(login.contains("never asks for your password"))
+        val impersonate = QualitySelector.describeYtDlpError(
+            "The extractor is attempting impersonation, but none of these impersonate targets are available: firefox."
+        )
+        assertTrue(impersonate.contains("browser check"))
+        val forbidden = QualitySelector.describeYtDlpError(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        )
+        assertTrue(forbidden.contains("403"))
+        val unsupported = QualitySelector.describeYtDlpError("ERROR: Unsupported URL: https://example.com/")
+        assertTrue(unsupported.contains("isn't a single video page"))
+        val gone = QualitySelector.describeYtDlpError("ERROR: Video unavailable")
+        assertTrue(gone.contains("unavailable"))
+        val fmt = QualitySelector.describeYtDlpError("ERROR: Requested format is not available.")
+        assertTrue(fmt.contains("isn't available for this video"))
+        val net = QualitySelector.describeYtDlpError(
+            "Unable to download webpage: [Errno -2] Name or service not known"
+        )
+        assertTrue(net.contains("internet connection"))
+    }
+
+    @Test
+    fun `describeYtDlpError passes unknown errors through unchanged`() {
+        val raw = "ERROR: something strange happened (code 42)"
+        assertEquals(raw, QualitySelector.describeYtDlpError(raw))
+        assertEquals("yt-dlp reported an error.", QualitySelector.describeYtDlpError(null))
+        assertEquals("yt-dlp reported an error.", QualitySelector.describeYtDlpError("   "))
     }
 }
