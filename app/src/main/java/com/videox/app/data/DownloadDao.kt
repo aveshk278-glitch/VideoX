@@ -50,6 +50,10 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = :status, progress = :progress, errorMessage = :error WHERE id = :id")
     suspend fun updateStatusById(id: Long, status: String, progress: Int, error: String?)
 
+    /** Fix up the recorded filename when the real file's extension differs (e.g. a direct WebM saved as .webm, not .mp4). */
+    @Query("UPDATE downloads SET fileName = :name WHERE id = :id")
+    suspend fun updateFileNameById(id: Long, name: String)
+
     @Query("SELECT * FROM downloads WHERE downloadId = :downloadId LIMIT 1")
     suspend fun getByDownloadId(downloadId: Long): DownloadItem?
 
