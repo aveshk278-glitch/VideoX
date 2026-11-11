@@ -12,8 +12,10 @@ import com.videox.app.VideoXApp
 import com.videox.app.data.DownloadItem
 import com.videox.app.download.DownloadManagerHelper
 import com.videox.app.download.QualitySelector
+import com.videox.app.download.SubtitleText
 import com.videox.app.download.YtDlpEngine
 import com.videox.app.download.YtVideoInfo
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -63,7 +65,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     var maxConcurrent by mutableStateOf(repository.maxConcurrentDownloads)
         private set
 
-    // ---- v2.9 settings (from the Seal Roadmap board) ----
+    // ---- v2.9 settings ----
 
     var warnMetered by mutableStateOf(repository.warnMetered)
         private set
@@ -78,6 +80,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         private set
 
     var embedChapters by mutableStateOf(repository.embedChapters)
+        private set
+
+    var transcribeFallback by mutableStateOf(repository.transcribeFallback)
+        private set
+
+    /** Progress text while speech transcription (or its model download) runs. */
+    var transcriptionProgress by mutableStateOf<String?>(null)
         private set
 
     /** The proxy actually used for yt-dlp requests: only a valid URL, never a typo. */
@@ -99,6 +108,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         private set
 
     var fetchingFormats by mutableStateOf(false)
+        private set
+
+    /** True while a video-to-text extraction is running. */
+    var extractingText by mutableStateOf(false)
         private set
 
     var videoInfo by mutableStateOf<YtVideoInfo?>(null)
@@ -303,6 +316,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         repository.embedChapters = enabled
     }
 
+    fun updateTranscribeFallback(enabled: Boolean) {
+        transcribeFallback = enabled
+        repository.transcribeFallback = enabled
+    }
+
     /** True when the typed proxy text is non-empty but not a usable proxy URL. */
     val proxyUrlInvalid: Boolean
         get() = proxyUrl.isNotBlank() && !QualitySelector.isValidProxyUrl(proxyUrl)
@@ -474,7 +492,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             showMessage("No internet connection. Check your connection and try again.", isError = true)
             return
         }
-        // Metered-network warning (Seal Roadmap #1251): on mobile data,
+        // Metered-network warning: on mobile data,
         // ask once before a download that may use a lot of data. The
         // dialog's "Download anyway" re-enters here with the flag set.
         if (!confirmedMetered &&
@@ -573,6 +591,209 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun dismissFallbackOffer() {
         fallbackOffer = null
+    }
+
+    /**
+     * Video-to-text extraction (v2.10): save the video's subtitles /
+     * captions as a clean .txt file in Downloads/VideoX, without
+     * downloading the video. The subtitle languages come from the
+     * Settings choice (English / Hindi / All). A video with no
+     * subtitles in those languages produces an honest message, never
+     * an empty file — yt-dlp exits cleanly and writes nothing in
+     * that case, so the created files are what decides success.
+     * No metered-network warning here: subtitle files are kilobytes.
+     */
+    fun extractText() {
+        val url = urlInput.trim()
+        if (url.isEmpty()) {
+            showMessage("Paste a video link first.", isError = true)
+            return
+        }
+        if (!repository.isOnline()) {
+            showMessage("No internet connection. Check your connection and try again.", isError = true)
+            return
+        }
+        if (DownloadManagerHelper.isSupportedVideoUrl(url)) {
+            showMessage("This is a direct media file — it has no subtitles to extract.", isError = true)
+            return
+        }
+        if (!YtDlpEngine.initialized) {
+            showMessage("yt-dlp is still starting up. Wait a few seconds and try again.", isError = true)
+            return
+        }
+        extractingText = true
+        message = null
+        viewModelScope.launch(Dispatchers.IO) {
+            queueSemaphore.acquire()
+            try {
+                ensureEngineUpdated()
+                // The title decides the filename, exactly as downloads do.
+                val (info, _) = fetchInfo(url)
+                val baseName = QualitySelector.resolveOutputBaseName(info.title, customFileName)
+                val dir = YtDlpEngine.downloadDir()
+                val proxy = effectiveProxyUrl
+                YtDlpEngine.extractSubtitles(
+                    url = url,
+                    outputBaseName = baseName,
+                    subtitleLangs = subtitleLangs,
+                    proxyUrl = proxy,
+                    processId = "videox_text_${System.currentTimeMillis()}"
+                )
+                val subFiles = dir.listFiles()
+                    ?.filter {
+                        it.name.startsWith(baseName) &&
+                            (it.name.endsWith(".srt") || it.name.endsWith(".vtt")) &&
+                            !it.name.endsWith(".part")
+                    }
+                    ?: emptyList()
+                if (subFiles.isEmpty() && !transcribeFallback) {
+                    val langsText = if (subtitleLangs == "all") "any language" else "“$subtitleLangs”"
+                    withContext(Dispatchers.Main) {
+                        showMessage(
+                            "This video has no subtitles or captions in $langsText — " +
+                                "so there is no text to extract. " +
+                                "Try the “All” subtitle language in Settings, or turn on speech transcription there.",
+                            isError = true
+                        )
+                    }
+                } else if (subFiles.isEmpty()) {
+                    // No subtitles — transcribe the speech on the phone
+                    // (Vosk, offline). First use downloads a ~40 MB voice
+                    // model once; the audio never leaves the phone.
+                    val reportProgress: (String) -> Unit = { text ->
+                        viewModelScope.launch { transcriptionProgress = text }
+                    }
+                    reportProgress("No subtitles found — preparing speech transcription…")
+                    val modelDir = com.videox.app.download.SpeechTranscriber.ensureModel(
+                        appContext, subtitleLangs
+                    ) { percent ->
+                        reportProgress("Downloading voice model (once)… $percent%")
+                    }
+                    val wavFile = File(appContext.cacheDir, "videox_stt_${System.currentTimeMillis()}.wav")
+                    try {
+                        reportProgress("Extracting audio for transcription…")
+                        YtDlpEngine.extractAudioWav(
+                            url = url,
+                            outputFile = wavFile,
+                            proxyUrl = proxy,
+                            processId = "videox_stt_${System.currentTimeMillis()}"
+                        )
+                        if (!wavFile.exists() || wavFile.length() == 0L) {
+                            throw IllegalStateException("The video's audio could not be extracted.")
+                        }
+                        val text = com.videox.app.download.SpeechTranscriber.transcribe(
+                            wavFile, modelDir
+                        ) { percent ->
+                            reportProgress("Transcribing speech… $percent%")
+                        }
+                        if (text.isBlank()) {
+                            withContext(Dispatchers.Main) {
+                                showMessage(
+                                    "No speech could be recognised in this video — " +
+                                        "it may have no spoken audio, or only music.",
+                                    isError = true
+                                )
+                            }
+                        } else {
+                            val txtName = "$baseName.txt"
+                            File(dir, txtName).writeText(text)
+                            repository.insertYtDownload(
+                                DownloadItem(
+                                    url = url,
+                                    fileName = txtName,
+                                    status = "COMPLETED",
+                                    progress = 100,
+                                    mode = "TEXT",
+                                    formatLabel = "Transcribed text",
+                                    engine = "YTDLP"
+                                )
+                            )
+                            withContext(Dispatchers.Main) {
+                                urlInput = ""
+                                videoInfo = null
+                                showMessage(
+                                    "Transcribed: $txtName — saved to Downloads/VideoX. " +
+                                        "Speech recognition is automatic, so a few words may be wrong."
+                                )
+                            }
+                        }
+                    } finally {
+                        try {
+                            wavFile.delete()
+                        } catch (_: Exception) {
+                        }
+                    }
+                } else {
+                    val converted = mutableListOf<String>()
+                    var alreadyCount = 0
+                    for (sub in subFiles) {
+                        val txtName = sub.nameWithoutExtension + ".txt"
+                        val txtFile = File(dir, txtName)
+                        if (txtFile.exists()) {
+                            alreadyCount++
+                            continue
+                        }
+                        val plain = try {
+                            SubtitleText.toPlainText(sub.readText())
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        if (plain.isBlank()) continue
+                        txtFile.writeText(plain)
+                        converted += txtName
+                        // The .txt is the deliverable — remove the
+                        // intermediate subtitle file so the folder
+                        // is not cluttered with two files per video.
+                        try {
+                            sub.delete()
+                        } catch (_: Exception) {
+                            // Keep going — a leftover .srt is harmless.
+                        }
+                    }
+                    for (name in converted) {
+                        repository.insertYtDownload(
+                            DownloadItem(
+                                url = url,
+                                fileName = name,
+                                status = "COMPLETED",
+                                progress = 100,
+                                mode = "TEXT",
+                                formatLabel = "Text (.txt)",
+                                engine = "YTDLP"
+                            )
+                        )
+                    }
+                    withContext(Dispatchers.Main) {
+                        when {
+                            converted.isNotEmpty() -> {
+                                urlInput = ""
+                                videoInfo = null
+                                showMessage("Text extracted: ${converted.joinToString(", ")} — saved to Downloads/VideoX")
+                            }
+                            alreadyCount > 0 -> showMessage("Already extracted: the text file is already in Downloads/VideoX.")
+                            else -> showMessage(
+                                "The subtitles found for this video were empty — no text file was created.",
+                                isError = true
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showMessage(
+                        "Text extraction failed: " +
+                            QualitySelector.describeYtDlpError(e.message, effectiveProxyUrl != null),
+                        isError = true
+                    )
+                }
+            } finally {
+                queueSemaphore.release()
+                withContext(Dispatchers.Main) {
+                    extractingText = false
+                    transcriptionProgress = null
+                }
+            }
+        }
     }
 
     private fun runYtDlpDownload(
@@ -784,7 +1005,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // ---- Settings backup and restore (v2.9, Seal Roadmap #577/#425) ----
+    // ---- Settings backup and restore (v2.9) ----
 
     fun backupSettings() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -823,6 +1044,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         subtitlesEnabled = repository.subtitlesEnabled
         subtitleLangs = repository.subtitleLangs
         embedChapters = repository.embedChapters
+        transcribeFallback = repository.transcribeFallback
     }
 
     fun openDownload(downloadId: Long) {
