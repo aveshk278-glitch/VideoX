@@ -90,11 +90,6 @@ object YtDlpEngine {
         return status?.name ?: "UNKNOWN"
     }
 
-    fun sanitizeFileName(name: String): String {
-        val cleaned = name.trim().replace(Regex("[^A-Za-z0-9._\\- ]"), "_").trim()
-        return if (cleaned.isEmpty()) "videox_${System.currentTimeMillis()}" else cleaned
-    }
-
     /** Fetch title + available formats for a URL. Runs yt-dlp --dump-json. */
     fun getInfo(url: String): YtVideoInfo {
         if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
@@ -158,16 +153,17 @@ object YtDlpEngine {
         formatSelector: String?,
         audioOnly: Boolean,
         audioFormat: String,
-        customFileName: String?,
+        outputBaseName: String,
         processId: String,
         onProgress: (Float, Long) -> Unit
     ): YoutubeDLResponse {
         if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
         val dir = downloadDir()
-        val baseName = if (customFileName.isNullOrBlank()) "%(title)s" else sanitizeFileName(customFileName)
         val request = YoutubeDLRequest(url)
-        // Output template: custom name (or title) + real extension chosen by yt-dlp.
-        request.addOption("-o", File(dir, "$baseName.%(ext)s").absolutePath)
+        // Output template: the EXACT base name the app expects (already
+        // sanitised by the caller). Never %(title)s — yt-dlp would write
+        // the raw title and the app would look for a different name.
+        request.addOption("-o", File(dir, "$outputBaseName.%(ext)s").absolutePath)
         // Never overwrite without asking: yt-dlp resumes partial files by default.
         request.addOption("--no-overwrites")
         // YouTube SABR workaround (yt-dlp #12482): the Android player
