@@ -6,18 +6,25 @@ import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.youtubedl_android.YoutubeDLResponse
+import com.yausername.youtubedl_android.mapper.VideoInfo
 import java.io.File
 
 /**
  * yt-dlp engine, via the youtubedl-android library (the library Seal uses).
+ *
+ * What it handles: any public video page yt-dlp supports (1000+ sites:
+ * YouTube, Vimeo, Dailymotion, Reddit, Pinterest, X, Facebook, TikTok,
+ * web pages with embedded video via the generic/HTML5 extractors, and
+ * direct media files), plus direct MP4/WebM links through the generic
+ * extractor. Direct links also have a fast DownloadManager path — see
+ * [DownloadManagerHelper]; the engine is the fallback for links the
+ * fast path cannot recognise (no file extension, redirects, pages).
  *
  * Honest limits, by design:
  * - Only downloads what yt-dlp can technically fetch from a public URL.
  * - No DRM, paywall, login or platform-protection bypass. No cookies, no
  *   credentials, no account login. If yt-dlp reports an error (for example
  *   a site blocking the request), the error is shown to the user as-is.
- * - Direct MP4/WebM links do NOT go through this engine — they use the
- *   fast DownloadManager path in DownloadManagerHelper instead.
  */
 data class YtFormat(
     val formatId: String,
@@ -93,7 +100,43 @@ object YtDlpEngine {
     /** Fetch title + available formats for a URL. Runs yt-dlp --dump-json. */
     fun getInfo(url: String): YtVideoInfo {
         if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
-        val info = YoutubeDL.getInstance().getInfo(url)
+        return mapVideoInfo(YoutubeDL.getInstance().getInfo(url), url)
+    }
+
+    /**
+     * Same as [getInfo] but with yt-dlp extractor args (e.g. the
+     * Android-player-client fallback for YouTube). Uses the
+     * getInfo(YoutubeDLRequest) overload — verified to exist in
+     * youtubedl-android 0.18.1 via javap on the real AAR.
+     */
+    fun getInfoWithArgs(url: String, extractorArgs: String): YtVideoInfo {
+        if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
+        val request = YoutubeDLRequest(url)
+        request.addOption("--extractor-args", extractorArgs)
+        return mapVideoInfo(YoutubeDL.getInstance().getInfo(request), url)
+    }
+
+    /**
+     * Check whether the Android-player-client (360p) fallback would
+     * download this video, WITHOUT downloading anything: runs yt-dlp in
+     * simulate mode. True means the user can be offered the 360p
+     * download as an explicit choice; false means there is no fallback.
+     */
+    fun probeFallback(url: String): Boolean {
+        if (!initialized) return false
+        return try {
+            val request = YoutubeDLRequest(url)
+            request.addOption("--simulate")
+            request.addOption("-f", QualitySelector.ANDROID_FALLBACK_SELECTOR)
+            request.addOption("--extractor-args", QualitySelector.ANDROID_FALLBACK_ARGS)
+            YoutubeDL.getInstance().execute(request, "videox_probe_${System.currentTimeMillis()}")
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun mapVideoInfo(info: VideoInfo, url: String): YtVideoInfo {
         val formats = (info.formats ?: emptyList()).mapNotNull { f ->
             val formatId = f.formatId ?: return@mapNotNull null
             val ext = f.ext ?: ""
