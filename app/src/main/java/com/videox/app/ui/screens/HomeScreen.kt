@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -171,8 +172,12 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
                 Text(maxLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Pick a quality:", fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(8.dp))
+            // Video quality list — hidden in Audio only mode (Seal #750):
+            // an audio download uses the best audio stream no matter
+            // what, so showing video qualities there is meaningless.
+            if (!viewModel.audioOnly) {
+                Text("Pick a quality:", fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
             // Best Quality first (highest genuinely available, video + audio merged),
             // then every real resolution, highest first. No fake qualities:
             // a height only appears if the source actually offers it.
@@ -222,6 +227,7 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
                         }
                     }
                 }
+            }
             }
         }
 
@@ -343,5 +349,31 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    // Metered-network warning (Seal Roadmap #1251): ask before a
+    // download on mobile data, so a big video does not eat the
+    // user's data plan silently. Can be turned off in Settings.
+    if (viewModel.meteredConfirmPending) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissMeteredWarning() },
+            title = { Text("Metered connection") },
+            text = {
+                Text(
+                    "You're on a metered connection (mobile data). This download may use a lot of data. " +
+                        "Download anyway, or wait until you're on Wi-Fi?"
+                )
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.startDownload(confirmedMetered = true) }) {
+                    Text("Download anyway")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { viewModel.dismissMeteredWarning() }) {
+                    Text("Wait for Wi-Fi")
+                }
+            }
+        )
     }
 }
