@@ -87,7 +87,7 @@ object YtDlpEngine {
      */
     fun updateEngine(context: Context): String {
         val status = YoutubeDL.getInstance().updateYoutubeDL(context)
-        return status.name
+        return status?.name ?: "UNKNOWN"
     }
 
     fun sanitizeFileName(name: String): String {
