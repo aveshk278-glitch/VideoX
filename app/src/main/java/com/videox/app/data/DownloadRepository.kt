@@ -43,21 +43,22 @@ class DownloadRepository(
 
     /**
      * Validates, enqueues with DownloadManager and records the download in history.
-     * Returns the DownloadManager id on success.
+     * [fileName] overrides the name derived from the URL (used when a
+     * content-type probe found the real filename). Returns the DownloadManager id on success.
      */
-    suspend fun startDownload(rawUrl: String): Result<Long> {
+    suspend fun startDownload(rawUrl: String, fileName: String? = null): Result<Long> {
         val validationError = DownloadManagerHelper.validateUrl(rawUrl)
         if (validationError != null) return Result.failure(IllegalArgumentException(validationError))
         if (!isOnline()) {
             return Result.failure(IllegalStateException("No internet connection. Check your connection and try again."))
         }
         val url = rawUrl.trim()
-        val fileName = DownloadManagerHelper.fileNameFromUrl(url)
+        val name = fileName ?: DownloadManagerHelper.fileNameFromUrl(url)
         return try {
-            val downloadId = DownloadManagerHelper.enqueue(context, url, fileName, wifiOnly)
+            val downloadId = DownloadManagerHelper.enqueue(context, url, name, wifiOnly)
             val item = DownloadItem(
                 url = url,
-                fileName = fileName,
+                fileName = name,
                 status = "QUEUED",
                 progress = 0,
                 totalBytes = 0L,
@@ -124,6 +125,11 @@ class DownloadRepository(
 
     suspend fun markYtStatus(id: Long, status: String, error: String?) {
         dao.updateStatusById(id, status, if (status == "COMPLETED") 100 else 0, error)
+    }
+
+    /** Record the real filename after a download (extension may differ from the assumed one). */
+    suspend fun updateYtFileName(id: Long, name: String) {
+        dao.updateFileNameById(id, name)
     }
 
     /** Open a file downloaded by yt-dlp (or a direct download) from Downloads/VideoX. */
