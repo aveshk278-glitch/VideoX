@@ -1,4 +1,4 @@
-# VideoX 2.0 — Android Video & Audio Downloader
+# VideoX 2.1 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -12,7 +12,7 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 - **Target / Compile SDK:** 34
 - **Language:** Kotlin 2.0.20, AGP 8.5.2, Gradle 8.7, Java 17
 - **Download folder:** `Downloads/VideoX` on the phone
-- **APK size:** large (roughly 50–80 MB) — yt-dlp bundles Python + FFmpeg + native libraries.
+- **APK size:** about 109 MB (arm64) — yt-dlp bundles Python + FFmpeg + native libraries.
 
 > **Important — what VideoX does and does not do**
 >
@@ -27,12 +27,23 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
-- Dark theme with purple + blue accents
+- **HD quality selection (v2.1):** after pasting a link, tap **Formats** and
+  VideoX shows every resolution the source genuinely offers — 144p, 240p,
+  360p, 480p, 720p HD, 1080p Full HD, 1440p 2K, 2160p 4K — plus **Best Quality
+  (Original)**. The chosen video stream is always merged with the best audio
+  stream (FFmpeg), so HD downloads have sound. The app shows the real
+  maximum ("Max available: 1080p Full HD") and never upscales or fakes a
+  quality the source does not offer. Quality logic is covered by unit tests
+  (`QualitySelectorTest`, run in CI with `testDebugUnitTest`).
+- Dark theme with purple + blue accents (light theme in Settings)
 - Home: URL input, **Paste URL** and **Download** buttons
-- Live progress, status and file size (where the server provides it)
+- Audio-only downloads (MP3 / M4A / Opus), custom filenames
+- Format list before download, download queue (1–3 at a time), clipboard detection
+- Live progress, status, ETA and file size (where the server provides it)
 - Downloads tab: All / Running / Completed / Failed filters
 - Download history saved in Room, with **Clear history** (files are not deleted)
-- Settings: Wi-Fi-only toggle, download folder, storage summary, About
+- Open / Share downloaded files, retry failed downloads, cancel running ones
+- Settings: Wi-Fi-only toggle, dark theme, simultaneous downloads, download folder, storage summary, About
 - URL validation with clear error messages
 - Handles no-internet, failed and paused downloads, and shows the reason
 
@@ -62,7 +73,10 @@ VideoX/
         │   │   ├── DownloadItem.kt
         │   │   └── DownloadRepository.kt
         │   ├── download/
-        │   │   └── DownloadManagerHelper.kt
+        │   │   ├── DownloadManagerHelper.kt
+        │   │   ├── YtDlpEngine.kt          # yt-dlp engine (formats + download)
+        │   │   ├── QualitySelector.kt      # HD quality logic (unit-tested)
+        │   │   └── DownloadService.kt      # foreground service
         │   └── ui/
         │       ├── theme/Color.kt, Theme.kt, Type.kt
         │       ├── viewmodel/DownloaderViewModel.kt
@@ -135,8 +149,9 @@ You do **not** need a computer. GitHub builds the APK for you.
 
 1. In the green (successful) run, scroll down to **Artifacts**.
 2. Tap **app-debug-apk**. A ZIP file downloads to your phone.
-3. Unzip that artifact ZIP (Files app or ZArchiver). Inside is
-   **`app-debug.apk`**.
+3. Unzip that artifact ZIP (Files app or ZArchiver). Inside are
+   **`app-arm64-v8a-debug.apk`** (most phones, including POCO X6 Pro 5G)
+   and `app-armeabi-v7a-debug.apk` (older phones).
 
 ### Step 6 — Install the APK on Android
 
