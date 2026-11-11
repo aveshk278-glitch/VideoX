@@ -108,19 +108,19 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
         ) {
             FilterChip(
                 selected = !viewModel.audioOnly,
-                onClick = { viewModel.setAudioOnly(false) },
+                onClick = { viewModel.updateAudioOnly(false) },
                 label = { Text("Video") }
             )
             FilterChip(
                 selected = viewModel.audioOnly,
-                onClick = { viewModel.setAudioOnly(true) },
+                onClick = { viewModel.updateAudioOnly(true) },
                 label = { Text("Audio only") }
             )
             if (viewModel.audioOnly) {
                 listOf("mp3", "m4a", "opus").forEach { fmt ->
                     FilterChip(
                         selected = viewModel.audioFormat == fmt,
-                        onClick = { viewModel.setAudioFormat(fmt) },
+                        onClick = { viewModel.updateAudioFormat(fmt) },
                         label = { Text(fmt.uppercase()) }
                     )
                 }
