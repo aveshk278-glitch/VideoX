@@ -1,4 +1,4 @@
-# VideoX 2.9 — Android Video & Audio Downloader
+# VideoX 2.10 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -27,7 +27,21 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
-- **Seal Roadmap features (v2.9):** a warning before downloading on a
+- **Video-to-text extraction (v2.10):** **Extract text from video** saves a
+  video's subtitles/captions as a clean `.txt` file in `Downloads/VideoX`
+  without downloading the video itself. Manual subtitles and auto-generated
+  captions are both fetched; the languages come from the Settings subtitle
+  choice. Timestamps, cue numbers and formatting tags are stripped, and
+  multi-line cues are joined. When a video has **no** subtitles, VideoX
+  transcribes the speech on the phone instead (offline Vosk speech
+  recognition, English or Hindi voice model downloaded once, about 40 MB,
+  no audio leaves the phone), so text can be extracted from any video with
+  spoken audio. A video with neither subtitles nor recognisable speech
+  reports that honestly instead of creating an empty file. Verified
+  against real yt-dlp 2026.10.26 (subtitle files, the no-subtitles case,
+  SRT + WebVTT parsing, and 16 kHz mono WAV extraction for the
+  transcriber) and against the real Vosk 0.3.75 AAR.
+- **New in v2.9:** a warning before downloading on a
   metered connection (mobile data), an optional proxy setting for yt-dlp
   (validated — an invalid proxy is ignored, never passed on), subtitle
   embedding into downloaded videos (including auto-generated captions, with
