@@ -160,7 +160,12 @@ object YtDlpEngine {
                 resolution = resolution,
                 height = height,
                 label = label,
-                fileSize = f.fileSize,
+                // YouTube often reports no exact filesize for DASH formats
+                // but does give an approximate one — use it, so quality
+                // sizes are honest instead of showing 0 (verified:
+                // VideoFormat has getFileSizeApproximate() in the real
+                // 0.18.1 AAR).
+                fileSize = if (f.fileSize > 0) f.fileSize else f.fileSizeApproximate,
                 isAudioOnly = isAudioOnly,
                 isVideoOnly = isVideoOnly,
                 vcodec = vcodec,
