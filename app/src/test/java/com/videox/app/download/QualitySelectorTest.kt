@@ -315,7 +315,7 @@ class QualitySelectorTest {
         assertTrue(msg.contains("Downloads tab"))
     }
 
-    // ---- v2.9: Seal Roadmap features ----
+    // ---- v2.9 features ----
 
     @Test
     fun `isValidProxyUrl accepts http https and socks5 proxies`() {
