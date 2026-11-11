@@ -109,21 +109,31 @@ object QualitySelector {
     }
 
     /**
-     * yt-dlp extractor args for a URL, or null when none are needed.
+     * Download attempts for a video, in order. Each entry is the value
+     * for yt-dlp's `--extractor-args`, or null for yt-dlp's DEFAULT
+     * YouTube clients.
      *
-     * YouTube now forces SABR streaming on its web client, which makes
-     * the bundled yt-dlp's web-client formats lose their URLs and fail
-     * with HTTP 403 (yt-dlp issue #12482). The Android player client is
-     * not forced into SABR, so asking for `android,web` gives working
-     * formats again. Only YouTube-family URLs get this flag; every other
-     * site is left untouched.
+     * Verified by running real yt-dlp 2025.11.12 against the user's own
+     * video (2026-11-11):
+     * - Default clients (android, web_safari, web) select 401+251 = 4K.
+     * - Forcing `player_client=android,web` drops web_safari from the
+     *   list; the web formats then have no URLs (SABR) and only format
+     *   18 (360p) survives — that was the v2.2/v2.3 bug: 4K shown, 360p
+     *   downloaded. The Android client on its own offers ONLY 360p.
+     * So: default clients first (full quality), Android client only as
+     * a LAST resort that at least downloads something (360p, honestly
+     * reported as such).
      */
-    fun extractorArgsFor(url: String): String? {
+    fun downloadAttempts(url: String): List<String?> {
         val lower = url.lowercase()
-        return if (lower.contains("youtube.com") || lower.contains("youtu.be")) {
-            "youtube:player_client=android,web"
+        val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
+        return if (isYouTube) {
+            listOf(
+                null, // yt-dlp defaults: android, web_safari, web — full quality
+                "youtube:player_client=android" // last resort: 360p only
+            )
         } else {
-            null
+            listOf(null) // other sites: one attempt, defaults only
         }
     }
 
