@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.videox.app.download.DownloadManagerHelper
+import com.videox.app.download.QualitySelector
 import com.videox.app.ui.viewmodel.DownloaderViewModel
 
 @Composable
@@ -42,11 +43,7 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
     val downloads by viewModel.downloads.collectAsState()
     val active = downloads.filter { it.isRunning }
     val info = viewModel.videoInfo
-    val formats = info?.formats.orEmpty()
-    // Show combined video+audio formats first, then video-only, then audio-only.
-    val shownFormats = formats.sortedWith(
-        compareBy({ it.isAudioOnly }, { it.isVideoOnly })
-    ).take(12)
+    val qualities = viewModel.availableQualities
 
     Column(
         modifier = Modifier
@@ -168,14 +165,29 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
             if (vinfo.uploader.isNotBlank()) {
                 Text(vinfo.uploader, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            viewModel.maxQualityLabel?.let { maxLabel ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(maxLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            }
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Pick a format:", fontWeight = FontWeight.SemiBold)
+            Text("Pick a quality:", fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.height(8.dp))
-            shownFormats.forEach { format ->
+            // Best Quality first (highest genuinely available, video + audio merged),
+            // then every real resolution, highest first. No fake qualities:
+            // a height only appears if the source actually offers it.
+            val qualityOptions: List<Pair<Int?, String>> =
+                listOf(null to "Best Quality (Original)") +
+                    qualities.map { h -> h to QualitySelector.qualityLabel(h) }
+            qualityOptions.forEach { (height, label) ->
+                val selected = viewModel.selectedQualityHeight == height
+                val sizeText = if (height != null) {
+                    val est = QualitySelector.estimatedSizeForHeight(vinfo.formats, height)
+                    if (est > 0) DownloadManagerHelper.formatSize(est) else null
+                } else null
                 Card(
-                    onClick = { viewModel.selectFormat(format) },
+                    onClick = { viewModel.selectQuality(height) },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (viewModel.selectedFormat?.formatId == format.formatId)
+                        containerColor = if (selected)
                             MaterialTheme.colorScheme.primaryContainer
                         else MaterialTheme.colorScheme.surfaceVariant
                     ),
@@ -188,14 +200,20 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = viewModel.selectedFormat?.formatId == format.formatId,
-                            onClick = { viewModel.selectFormat(format) }
+                            selected = selected,
+                            onClick = { viewModel.selectQuality(height) }
                         )
                         Column {
-                            Text(format.label, fontWeight = FontWeight.SemiBold)
-                            if (format.fileSize > 0) {
+                            Text(label, fontWeight = FontWeight.SemiBold)
+                            if (height == null) {
                                 Text(
-                                    DownloadManagerHelper.formatSize(format.fileSize),
+                                    "Highest video + best audio, merged into one file",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else if (sizeText != null) {
+                                Text(
+                                    "Approx. $sizeText",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -203,13 +221,6 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
                         }
                     }
                 }
-            }
-            if (formats.size > shownFormats.size) {
-                Text(
-                    "Showing ${shownFormats.size} of ${formats.size} formats.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
