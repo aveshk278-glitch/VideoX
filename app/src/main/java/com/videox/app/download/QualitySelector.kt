@@ -104,13 +104,18 @@ object QualitySelector {
 
     /**
      * Best-effort size estimate for a quality: best video at/below the
-     * height plus best audio. Returns 0 when sizes are unknown.
+     * height plus best audio. Returns 0 when sizes are unknown — in
+     * particular when the video size is unknown, the total is unknown:
+     * returning just the audio size would show a wrong number (e.g.
+     * "Approx. 4.5 MB" next to 4K, which was only the audio stream).
+     * HomeScreen hides the size line when the estimate is 0.
      */
     fun estimatedSizeForHeight(formats: List<YtFormat>, height: Int): Long {
         val video = formats.filter { it.height > 0 && it.height <= height }
             .maxByOrNull { it.height }
         val audio = formats.filter { it.isAudioOnly }.maxByOrNull { it.fileSize }
         val videoSize = video?.fileSize ?: 0L
+        if (videoSize == 0L) return 0L
         val audioSize = if (video?.isVideoOnly == true) audio?.fileSize ?: 0L else 0L
         return videoSize + audioSize
     }
@@ -216,6 +221,12 @@ object QualitySelector {
                 "This video is unavailable, removed or deleted."
             lower.contains("requested format is not available") || lower.contains("format is not available") ->
                 "The quality you picked isn't available for this video. Pick another quality from the list."
+            lower.contains("no address associated with hostname") ||
+                lower.contains("temporary failure in name resolution") ||
+                lower.contains("name resolution") ->
+                "Your phone couldn't find the video server's address (a DNS problem). " +
+                    "YouTube itself loaded fine, but the server holding the video file didn't resolve. " +
+                    "Tap Retry, or switch between Wi-Fi and mobile data, or turn Airplane mode on and off, then try again."
             lower.contains("unable to download webpage") || lower.contains("name or service not known") ||
                 lower.contains("connection") || lower.contains("timed out") ||
                 lower.contains("network is unreachable") || lower.contains("no route to host") ->
