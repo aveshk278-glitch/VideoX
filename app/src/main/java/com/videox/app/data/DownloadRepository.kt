@@ -34,11 +34,127 @@ class DownloadRepository(
         get() = prefs.getInt("max_concurrent", 2).coerceIn(1, 3)
         set(value) { prefs.edit().putInt("max_concurrent", value.coerceIn(1, 3)).apply() }
 
+    // ---- v2.9 settings (from the Seal Roadmap board) ----
+
+    /** Warn before downloading on a metered connection (mobile data). */
+    var warnMetered: Boolean
+        get() = prefs.getBoolean("warn_metered", true)
+        set(value) { prefs.edit().putBoolean("warn_metered", value).apply() }
+
+    /** Optional proxy URL for yt-dlp (empty = direct). Only a valid URL is ever used. */
+    var proxyUrl: String
+        get() = prefs.getString("proxy_url", "") ?: ""
+        set(value) { prefs.edit().putString("proxy_url", value).apply() }
+
+    /** Embed subtitles into downloaded videos when the video has them. */
+    var subtitlesEnabled: Boolean
+        get() = prefs.getBoolean("subtitles_enabled", false)
+        set(value) { prefs.edit().putBoolean("subtitles_enabled", value).apply() }
+
+    /** Subtitle languages for yt-dlp, e.g. "en", "hi" or "all". */
+    var subtitleLangs: String
+        get() = prefs.getString("subtitle_langs", "en") ?: "en"
+        set(value) { prefs.edit().putString("subtitle_langs", value).apply() }
+
+    /** Embed chapter markers into downloaded files when the video has chapters. */
+    var embedChapters: Boolean
+        get() = prefs.getBoolean("embed_chapters", false)
+        set(value) { prefs.edit().putBoolean("embed_chapters", value).apply() }
+
     fun isOnline(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /** True when the active network is metered (typically mobile data). */
+    fun isNetworkMetered(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        return try {
+            cm.isActiveNetworkMetered
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // ---- Settings backup and restore (v2.9) ----
+
+    private fun backupFile(): java.io.File {
+        val dir = java.io.File(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            DownloadManagerHelper.DOWNLOAD_FOLDER
+        )
+        dir.mkdirs()
+        return java.io.File(dir, "videox-settings-backup.json")
+    }
+
+    /** Write all settings to Downloads/VideoX/videox-settings-backup.json. */
+    fun backupSettings(): Result<java.io.File> {
+        return try {
+            val values = mapOf(
+                "wifi_only" to wifiOnly.toString(),
+                "show_notifications" to showNotifications.toString(),
+                "dark_theme" to darkTheme.toString(),
+                "max_concurrent" to maxConcurrentDownloads.toString(),
+                "warn_metered" to warnMetered.toString(),
+                "proxy_url" to proxyUrl,
+                "subtitles_enabled" to subtitlesEnabled.toString(),
+                "subtitle_langs" to subtitleLangs,
+                "embed_chapters" to embedChapters.toString()
+            )
+            val file = backupFile()
+            file.writeText(com.videox.app.download.SettingsBackup.encode(values))
+            Result.success(file)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Read the backup file and apply its settings. Every value is
+     * validated before it is written: a damaged file restores nothing
+     * and reports the failure, and an invalid value (bad proxy URL,
+     * out-of-range number) is skipped instead of corrupting settings.
+     * Returns the number of settings actually applied.
+     */
+    fun restoreSettings(): Result<Int> {
+        return try {
+            val file = backupFile()
+            if (!file.exists()) {
+                return Result.failure(
+                    IllegalStateException("No backup file found in Downloads/VideoX. Back up your settings first.")
+                )
+            }
+            val values = com.videox.app.download.SettingsBackup.decode(file.readText())
+                ?: return Result.failure(
+                    IllegalStateException("The backup file is damaged and could not be read. Nothing was changed.")
+                )
+            var applied = 0
+            values["wifi_only"]?.toBooleanStrictOrNull()?.let { wifiOnly = it; applied++ }
+            values["show_notifications"]?.toBooleanStrictOrNull()?.let { showNotifications = it; applied++ }
+            values["dark_theme"]?.toBooleanStrictOrNull()?.let { darkTheme = it; applied++ }
+            values["max_concurrent"]?.toIntOrNull()?.let {
+                maxConcurrentDownloads = it
+                applied++
+            }
+            values["warn_metered"]?.toBooleanStrictOrNull()?.let { warnMetered = it; applied++ }
+            values["proxy_url"]?.let { url ->
+                if (url.isBlank() || com.videox.app.download.QualitySelector.isValidProxyUrl(url)) {
+                    proxyUrl = url
+                    applied++
+                }
+            }
+            values["subtitles_enabled"]?.toBooleanStrictOrNull()?.let { subtitlesEnabled = it; applied++ }
+            values["subtitle_langs"]?.let {
+                subtitleLangs = com.videox.app.download.QualitySelector.sanitizeSubtitleLangs(it)
+                applied++
+            }
+            values["embed_chapters"]?.toBooleanStrictOrNull()?.let { embedChapters = it; applied++ }
+            Result.success(applied)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     /**
