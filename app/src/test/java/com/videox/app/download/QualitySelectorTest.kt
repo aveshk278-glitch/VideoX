@@ -250,4 +250,37 @@ class QualitySelectorTest {
         assertEquals("yt-dlp reported an error.", QualitySelector.describeYtDlpError(null))
         assertEquals("yt-dlp reported an error.", QualitySelector.describeYtDlpError("   "))
     }
+
+    @Test
+    fun `isAlreadyDownloaded recognises yt-dlp skip message`() {
+        // The exact line from the user's phone (v2.5): the file was
+        // already on disk, yt-dlp skipped it, the app called it a failure.
+        assertTrue(
+            QualitySelector.isAlreadyDownloaded(
+                "[download] /storage/emulated/0/Download/VideoX/CID Season 2 _ Latest Episode.mp4 has already been downloaded"
+            )
+        )
+        assertTrue(
+            QualitySelector.isAlreadyDownloaded(
+                "[download] Video by trendydr0.mp4 HAS ALREADY BEEN DOWNLOADED"
+            )
+        )
+    }
+
+    @Test
+    fun `isAlreadyDownloaded is false for other output`() {
+        assertFalse(QualitySelector.isAlreadyDownloaded("[download] 100% of 1.2GiB in 00:42"))
+        assertFalse(QualitySelector.isAlreadyDownloaded(""))
+        assertFalse(QualitySelector.isAlreadyDownloaded(null))
+        assertFalse(QualitySelector.isAlreadyDownloaded("ERROR: unable to download video data: HTTP Error 403"))
+    }
+
+    @Test
+    fun `describeYtDlpError maps already-downloaded to the Downloads tab`() {
+        val msg = QualitySelector.describeYtDlpError(
+            "[download] Video by trendydr0.mp4 has already been downloaded"
+        )
+        assertTrue(msg.contains("already downloaded"))
+        assertTrue(msg.contains("Downloads tab"))
+    }
 }
