@@ -59,8 +59,9 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Paste a link from a site that permits downloading, or a direct MP4/WebM link. " +
-                "VideoX uses yt-dlp for supported sites and DownloadManager for direct links.",
+            text = "Paste any video link — YouTube, Vimeo, Dailymotion, Reddit, social posts, " +
+                "web pages with embedded video, or a direct MP4/WebM file. VideoX reads the " +
+                "page, lists the real qualities, and downloads the one you pick.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -224,6 +225,35 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
             }
         }
 
+        // The user must choose the 360p fallback explicitly — VideoX never
+        // silently downgrades a requested quality.
+        viewModel.fallbackOffer?.let {
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text("Full quality is blocked — 360p is available", fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "YouTube is blocking the quality you picked for this video right now. " +
+                            "A 360p download would work. Download it, or try the higher quality again later.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { viewModel.startFallbackDownload() }) {
+                            Text("Download 360p")
+                        }
+                        OutlinedButton(onClick = { viewModel.dismissFallbackOffer() }) {
+                            Text("Not now")
+                        }
+                    }
+                }
+            }
+        }
+
         viewModel.message?.let { msg ->
             Spacer(modifier = Modifier.height(16.dp))
             Card(
@@ -299,10 +329,13 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
             Row(modifier = Modifier.padding(14.dp)) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(modifier = Modifier.padding(start = 12.dp)) {
-                    Text("Only links that allow downloading", fontWeight = FontWeight.SemiBold)
+                    Text("Only public links that allow downloading", fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "VideoX does not bypass DRM, paywalls, logins or platform download protections, and it never asks for your passwords. If a site blocks the download, VideoX shows that error instead of pretending it worked.",
+                        text = "VideoX downloads public videos from sites that permit it, and direct media files. " +
+                            "It does not bypass DRM, paywalls, logins or platform download protections, and it never " +
+                            "asks for your passwords. If a video genuinely can't be downloaded, VideoX says why " +
+                            "instead of pretending it worked.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
