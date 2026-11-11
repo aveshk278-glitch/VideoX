@@ -566,9 +566,22 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                         // yt-dlp finished without throwing — check a REAL
                         // file actually appeared (.part files don't count).
-                        val foundFile = dir.listFiles()
-                            ?.filter { it.name.startsWith(fileName) && !it.name.endsWith(".part") }
-                            ?.firstOrNull { it.name !in beforeNames || it.lastModified() >= attemptStartedAt }
+                        // EXCEPTION: "--no-overwrites" makes yt-dlp skip a
+                        // file that is already complete and report "has
+                        // already been downloaded". That file is real and
+                        // finished, so it is a SUCCESS, not a failure —
+                        // v2.5 wrongly showed "Download failed" for it.
+                        val alreadyThere = QualitySelector.isAlreadyDownloaded(response.out) ||
+                            QualitySelector.isAlreadyDownloaded(response.err)
+                        val foundFile = if (alreadyThere) {
+                            dir.listFiles()
+                                ?.filter { it.name.startsWith(fileName) && !it.name.endsWith(".part") }
+                                ?.firstOrNull()
+                        } else {
+                            dir.listFiles()
+                                ?.filter { it.name.startsWith(fileName) && !it.name.endsWith(".part") }
+                                ?.firstOrNull { it.name !in beforeNames || it.lastModified() >= attemptStartedAt }
+                        }
                         if (foundFile != null) {
                             // The real extension may differ from the
                             // assumed one (e.g. a direct WebM stays .webm,
@@ -582,7 +595,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                                 }
                             }
                             withContext(Dispatchers.Main) {
-                                showMessage("Download finished: $actualName")
+                                showMessage(
+                                    if (alreadyThere) "Already downloaded: $actualName"
+                                    else "Download finished: $actualName"
+                                )
                             }
                             done = true
                         } else {
