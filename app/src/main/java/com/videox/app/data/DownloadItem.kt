@@ -21,7 +21,7 @@ data class DownloadItem(
     val downloadId: Long = -1L,
     val createdAt: Long = System.currentTimeMillis(),
     val errorMessage: String? = null,
-    /** VIDEO or AUDIO. */
+    /** VIDEO, AUDIO or TEXT (extracted subtitles). */
     val mode: String = "VIDEO",
     /** Human-readable format label chosen by the user, e.g. "Video • 720p • mp4". */
     val formatLabel: String? = null,
