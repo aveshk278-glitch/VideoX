@@ -170,6 +170,17 @@ object QualitySelector {
     const val ANDROID_FALLBACK_SELECTOR = "best"
 
     /**
+     * True when yt-dlp reports that the file is already on disk.
+     * With "--no-overwrites" yt-dlp skips a complete file and prints
+     * "[download] ... has already been downloaded" — the file is real
+     * and finished, so that is a SUCCESS, not a failure. (v2.5 treated
+     * it as a failure because no file changed during the attempt.)
+     */
+    fun isAlreadyDownloaded(output: String?): Boolean {
+        return output?.contains("has already been downloaded", ignoreCase = true) == true
+    }
+
+    /**
      * Turn a raw yt-dlp / engine error into an accurate, user-facing
      * explanation. Never a generic "this link is not supported": each
      * known failure says what actually happened, and an unknown error
@@ -180,6 +191,8 @@ object QualitySelector {
         if (text.isEmpty()) return "yt-dlp reported an error."
         val lower = text.lowercase()
         return when {
+            lower.contains("has already been downloaded") ->
+                "This video is already downloaded — check the Downloads tab."
             lower.contains("not a bot") || lower.contains("sign in to confirm") ->
                 "YouTube is asking for a bot check (sign-in) for this video. " +
                     "VideoX never signs in or uses your account, so this video can't be downloaded right now. " +
