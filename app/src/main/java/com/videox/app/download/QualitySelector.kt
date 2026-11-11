@@ -190,8 +190,11 @@ object QualitySelector {
      * explanation. Never a generic "this link is not supported": each
      * known failure says what actually happened, and an unknown error
      * is shown as-is instead of being replaced by a restriction message.
+     * When [proxyConfigured] is true, a connection failure also points
+     * at the proxy setting, because a wrong proxy looks exactly like
+     * "no internet" from yt-dlp's side.
      */
-    fun describeYtDlpError(raw: String?): String {
+    fun describeYtDlpError(raw: String?, proxyConfigured: Boolean = false): String {
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return "yt-dlp reported an error."
         val lower = text.lowercase()
@@ -230,7 +233,13 @@ object QualitySelector {
             lower.contains("unable to download webpage") || lower.contains("name or service not known") ||
                 lower.contains("connection") || lower.contains("timed out") ||
                 lower.contains("network is unreachable") || lower.contains("no route to host") ->
-                "Couldn't reach the site — check your internet connection and try again."
+                "Couldn't reach the site — check your internet connection and try again." +
+                    if (proxyConfigured) {
+                        " If you set a proxy in Settings, check that the proxy address is correct — " +
+                            "a wrong proxy blocks every download."
+                    } else {
+                        ""
+                    }
             lower.contains("no video formats") ->
                 "No downloadable video was found on this page."
             else -> text
@@ -280,4 +289,86 @@ object QualitySelector {
     /** The exact base name (no extension) the download will be saved as. */
     fun resolveOutputBaseName(title: String, customFileName: String?): String =
         if (customFileName.isNullOrBlank()) sanitizeFileName(title) else sanitizeFileName(customFileName)
+
+    // ---- v2.9: features taken from the Seal Roadmap board ----
+
+    /**
+     * A proxy URL is usable by yt-dlp when it has a supported scheme
+     * (http, https or socks5), a non-empty host, no spaces, and — when
+     * a port is given — a numeric port in range. Optional
+     * user:password credentials before the host are allowed. An invalid
+     * proxy is NEVER passed to yt-dlp: the app ignores it and downloads
+     * directly, so a typo in Settings cannot break every download.
+     */
+    fun isValidProxyUrl(raw: String): Boolean {
+        val url = raw.trim()
+        if (url.isEmpty() || url.any { it.isWhitespace() }) return false
+        val scheme = url.substringBefore("://", missingDelimiterValue = "")
+        if (scheme !in listOf("http", "https", "socks5")) return false
+        var rest = url.substringAfter("://")
+        if (rest.isEmpty()) return false
+        if ("@" in rest) rest = rest.substringAfterLast("@")
+        val hostPort = rest.substringBefore("/")
+        if (hostPort.isEmpty()) return false
+        val host = hostPort.substringBefore(":")
+        if (host.isEmpty() || !host.all { it.isLetterOrDigit() || it == '.' || it == '-' }) return false
+        if (":" in hostPort) {
+            val port = hostPort.substringAfter(":").toIntOrNull() ?: return false
+            if (port !in 1..65535) return false
+        }
+        return true
+    }
+
+    /**
+     * Normalise a subtitle-language choice for yt-dlp's --sub-langs:
+     * lowercase, comma-separated 2-3 letter language codes, or the word
+     * "all". Anything unrecognised falls back to "en" — never an empty
+     * or invalid value that would make yt-dlp fail the whole download.
+     */
+    fun sanitizeSubtitleLangs(raw: String): String {
+        val cleaned = raw.trim().lowercase()
+        if (cleaned == "all") return "all"
+        val langs = cleaned.split(",")
+            .map { it.trim() }
+            .filter { it.length in 2..3 && it.all { c -> c.isLetter() } }
+            .distinct()
+        return if (langs.isEmpty()) "en" else langs.joinToString(",")
+    }
+
+    /**
+     * Extra yt-dlp options for a download, from the user's Settings.
+     * Each entry is (option, value); a null value means a flag-only
+     * option. Subtitles are video-only: an audio extraction has no
+     * subtitle track to embed. Chapters embed in both modes.
+     *
+     * Flags verified against real yt-dlp 2026.10.26 (2026-11-12):
+     * --embed-subs downloads the subtitles, embeds them into the mp4
+     * as a mov_text stream, and deletes the separate subtitle file, so
+     * no stray .vtt files are left in Downloads. --write-auto-subs
+     * also fetches auto-generated captions (without it, videos that
+     * only have auto-captions would get no subtitles at all).
+     * --embed-chapters writes real chapter markers into the file
+     * (verified with ffprobe: 12 chapters with titles and times).
+     */
+    fun extraDownloadOptions(
+        subtitlesEnabled: Boolean,
+        subtitleLangs: String,
+        embedChapters: Boolean,
+        audioOnly: Boolean
+    ): List<Pair<String, String?>> {
+        val options = mutableListOf<Pair<String, String?>>()
+        if (subtitlesEnabled && !audioOnly) {
+            options += "--embed-subs" to null
+            options += "--write-auto-subs" to null
+            options += "--sub-langs" to sanitizeSubtitleLangs(subtitleLangs)
+        }
+        if (embedChapters) {
+            options += "--embed-chapters" to null
+        }
+        return options
+    }
+
+    /** True when the metered-network warning dialog should be shown. */
+    fun shouldWarnMetered(metered: Boolean, warnEnabled: Boolean): Boolean =
+        metered && warnEnabled
 }
