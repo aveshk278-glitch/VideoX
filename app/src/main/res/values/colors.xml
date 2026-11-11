@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_500">#7C4DFF</color>
-    <color name="purple_700">#5E35B1</color>
-    <color name="blue_500">#448AFF</color>
-    <color name="blue_700">#2962FF</color>
-    <color name="dark_background">#0F0F1A</color>
-    <color name="dark_surface">#1A1A2E</color>
+    <color name="purple_500">#8050FF</color>
+    <color name="purple_700">#6A3DF0</color>
+    <color name="blue_500">#A78BFA</color>
+    <color name="blue_700">#8050FF</color>
+    <color name="dark_background">#101019</color>
+    <color name="dark_surface">#171722</color>
 </resources>
