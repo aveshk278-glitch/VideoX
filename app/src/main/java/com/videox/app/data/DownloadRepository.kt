@@ -34,7 +34,7 @@ class DownloadRepository(
         get() = prefs.getInt("max_concurrent", 2).coerceIn(1, 3)
         set(value) { prefs.edit().putInt("max_concurrent", value.coerceIn(1, 3)).apply() }
 
-    // ---- v2.9 settings (from the Seal Roadmap board) ----
+    // ---- v2.9 settings ----
 
     /** Warn before downloading on a metered connection (mobile data). */
     var warnMetered: Boolean
@@ -60,6 +60,11 @@ class DownloadRepository(
     var embedChapters: Boolean
         get() = prefs.getBoolean("embed_chapters", false)
         set(value) { prefs.edit().putBoolean("embed_chapters", value).apply() }
+
+    /** Transcribe speech on the phone when a video has no subtitles to extract. */
+    var transcribeFallback: Boolean
+        get() = prefs.getBoolean("transcribe_fallback", true)
+        set(value) { prefs.edit().putBoolean("transcribe_fallback", value).apply() }
 
     fun isOnline(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -101,7 +106,8 @@ class DownloadRepository(
                 "proxy_url" to proxyUrl,
                 "subtitles_enabled" to subtitlesEnabled.toString(),
                 "subtitle_langs" to subtitleLangs,
-                "embed_chapters" to embedChapters.toString()
+                "embed_chapters" to embedChapters.toString(),
+                "transcribe_fallback" to transcribeFallback.toString()
             )
             val file = backupFile()
             file.writeText(com.videox.app.download.SettingsBackup.encode(values))
@@ -151,6 +157,7 @@ class DownloadRepository(
                 applied++
             }
             values["embed_chapters"]?.toBooleanStrictOrNull()?.let { embedChapters = it; applied++ }
+            values["transcribe_fallback"]?.toBooleanStrictOrNull()?.let { transcribeFallback = it; applied++ }
             Result.success(applied)
         } catch (e: Exception) {
             Result.failure(e)
@@ -260,6 +267,7 @@ class DownloadRepository(
         )
         val mime = when (file.extension.lowercase()) {
             "mp3", "m4a", "opus", "flac", "wav", "ogg" -> "audio/*"
+            "txt" -> "text/plain"
             else -> "video/*"
         }
         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
@@ -282,6 +290,7 @@ class DownloadRepository(
         )
         val mime = when (file.extension.lowercase()) {
             "mp3", "m4a", "opus", "flac", "wav", "ogg" -> "audio/*"
+            "txt" -> "text/plain"
             else -> "video/*"
         }
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
