@@ -1,4 +1,4 @@
-# VideoX 2.12 — Android Video & Audio Downloader
+# VideoX 2.13 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -27,6 +27,13 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
+- **Honest error messages (v2.13):** a download failure now reports the
+  error that actually stopped it. yt-dlp prints an impersonation
+  warning even when the real failure is a timeout or an unreachable
+  site, and that warning used to mask the real cause. Network and DNS
+  errors are now reported as network and DNS errors, with a note that
+  a site which only loads with a VPN in the browser needs the VPN
+  here too.
 - **New app logo (v2.12):** the launcher icon was redesigned to match the
   premium identity — a white play triangle with a download arrow cut
   through it, on the app's purple gradient (#8F63FF → #6A3DF0). The icon
