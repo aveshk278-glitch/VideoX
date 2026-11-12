@@ -205,6 +205,31 @@ object QualitySelector {
                 "YouTube is asking for a bot check (sign-in) for this video. " +
                     "VideoX never signs in or uses your account, so this video can't be downloaded right now. " +
                     "Try again later, or try a different video."
+            // Network failures come BEFORE the impersonation branch on
+            // purpose. yt-dlp prints the impersonation text as a WARNING
+            // even when the real failure is a timeout or an unreachable
+            // site (12 Nov: the log held the warning plus "Unable to
+            // download webpage: timed out", and the same link downloads
+            // in Seal only with a VPN). A warning must never mask the
+            // error that actually stopped the download.
+            lower.contains("no address associated with hostname") ||
+                lower.contains("temporary failure in name resolution") ||
+                lower.contains("name resolution") ->
+                "Your phone couldn't find the video server's address (a DNS problem). " +
+                    "Tap Retry, or switch between Wi-Fi and mobile data, or turn Airplane mode on and off, then try again."
+            !lower.contains("403") && (
+                lower.contains("unable to download webpage") || lower.contains("name or service not known") ||
+                    lower.contains("connection") || lower.contains("timed out") ||
+                    lower.contains("network is unreachable") || lower.contains("no route to host")
+                ) ->
+                "Couldn't reach the site — check your internet connection and try again. " +
+                    "If the site only loads in your browser with a VPN, connect the VPN and retry." +
+                    if (proxyConfigured) {
+                        " If you set a proxy in Settings, check that the proxy address is correct — " +
+                            "a wrong proxy blocks every download."
+                    } else {
+                        ""
+                    }
             lower.contains("impersonat") ->
                 "This site needs a browser check this app can't perform, so it can't be downloaded right now."
             lower.contains("logged-in") || lower.contains("login required") ||
@@ -224,22 +249,6 @@ object QualitySelector {
                 "This video is unavailable, removed or deleted."
             lower.contains("requested format is not available") || lower.contains("format is not available") ->
                 "The quality you picked isn't available for this video. Pick another quality from the list."
-            lower.contains("no address associated with hostname") ||
-                lower.contains("temporary failure in name resolution") ||
-                lower.contains("name resolution") ->
-                "Your phone couldn't find the video server's address (a DNS problem). " +
-                    "YouTube itself loaded fine, but the server holding the video file didn't resolve. " +
-                    "Tap Retry, or switch between Wi-Fi and mobile data, or turn Airplane mode on and off, then try again."
-            lower.contains("unable to download webpage") || lower.contains("name or service not known") ||
-                lower.contains("connection") || lower.contains("timed out") ||
-                lower.contains("network is unreachable") || lower.contains("no route to host") ->
-                "Couldn't reach the site — check your internet connection and try again." +
-                    if (proxyConfigured) {
-                        " If you set a proxy in Settings, check that the proxy address is correct — " +
-                            "a wrong proxy blocks every download."
-                    } else {
-                        ""
-                    }
             lower.contains("no video formats") ->
                 "No downloadable video was found on this page."
             else -> text
