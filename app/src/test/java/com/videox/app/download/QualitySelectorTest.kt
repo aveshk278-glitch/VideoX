@@ -275,6 +275,28 @@ class QualitySelectorTest {
     }
 
     @Test
+    fun `describeYtDlpError prefers the real network error over an impersonation warning`() {
+        // Real case (12 Nov): the log held an impersonation WARNING plus
+        // the real ERROR, a timeout — the site was unreachable on the
+        // phone's network (the same link downloads in Seal only with a
+        // VPN). The warning must not mask the network error.
+        val mixed = QualitySelector.describeYtDlpError(
+            "WARNING: [xh] The extractor is attempting impersonation, but no impersonate target is available. " +
+                "ERROR: Unable to download webpage: timed out"
+        )
+        assertTrue(mixed.contains("internet connection"))
+        assertTrue(!mixed.contains("browser check"))
+        assertTrue(mixed.contains("VPN"))
+        // And a 403 after the same warning still reports the browser
+        // check, not a network failure.
+        val blocked = QualitySelector.describeYtDlpError(
+            "WARNING: The extractor is attempting impersonation, but no impersonate target is available. " +
+                "ERROR: Unable to download webpage: HTTP Error 403: Forbidden"
+        )
+        assertTrue(blocked.contains("browser check"))
+    }
+
+    @Test
     fun `describeYtDlpError passes unknown errors through unchanged`() {
         val raw = "ERROR: something strange happened (code 42)"
         assertEquals(raw, QualitySelector.describeYtDlpError(raw))
