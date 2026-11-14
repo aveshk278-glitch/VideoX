@@ -66,6 +66,29 @@ class DownloadRepository(
         get() = prefs.getBoolean("transcribe_fallback", true)
         set(value) { prefs.edit().putBoolean("transcribe_fallback", value).apply() }
 
+    // ---- v2.14 settings (original-language text extraction) ----
+
+    /**
+     * Language for video-to-text extraction: "auto" (detect the
+     * video's own language, default), "original", a language code
+     * ("hi", "en", "ur", ...), or "all". This is separate from
+     * [subtitleLangs], which only drives subtitle embedding into
+     * downloaded videos.
+     */
+    var extractionLanguage: String
+        get() = prefs.getString("extraction_language", "auto") ?: "auto"
+        set(value) { prefs.edit().putString("extraction_language", value).apply() }
+
+    /** Also save a translated copy of extracted text (optional, off by default). */
+    var translateEnabled: Boolean
+        get() = prefs.getBoolean("translate_enabled", false)
+        set(value) { prefs.edit().putBoolean("translate_enabled", value).apply() }
+
+    /** Target language for the optional translation (a real language code, e.g. "en"). */
+    var translateTargetLanguage: String
+        get() = prefs.getString("translate_target", "en") ?: "en"
+        set(value) { prefs.edit().putString("translate_target", value).apply() }
+
     fun isOnline(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = cm.activeNetwork ?: return false
@@ -107,7 +130,10 @@ class DownloadRepository(
                 "subtitles_enabled" to subtitlesEnabled.toString(),
                 "subtitle_langs" to subtitleLangs,
                 "embed_chapters" to embedChapters.toString(),
-                "transcribe_fallback" to transcribeFallback.toString()
+                "transcribe_fallback" to transcribeFallback.toString(),
+                "extraction_language" to extractionLanguage,
+                "translate_enabled" to translateEnabled.toString(),
+                "translate_target" to translateTargetLanguage
             )
             val file = backupFile()
             file.writeText(com.videox.app.download.SettingsBackup.encode(values))
@@ -158,6 +184,19 @@ class DownloadRepository(
             }
             values["embed_chapters"]?.toBooleanStrictOrNull()?.let { embedChapters = it; applied++ }
             values["transcribe_fallback"]?.toBooleanStrictOrNull()?.let { transcribeFallback = it; applied++ }
+            values["extraction_language"]?.let {
+                if (com.videox.app.download.ExtractionLanguage.isKnownCode(it)) {
+                    extractionLanguage = it
+                    applied++
+                }
+            }
+            values["translate_enabled"]?.toBooleanStrictOrNull()?.let { translateEnabled = it; applied++ }
+            values["translate_target"]?.let {
+                if (com.videox.app.download.ExtractionLanguage.isTranslationTarget(it)) {
+                    translateTargetLanguage = it
+                    applied++
+                }
+            }
             Result.success(applied)
         } catch (e: Exception) {
             Result.failure(e)
