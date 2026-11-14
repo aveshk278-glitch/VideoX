@@ -47,7 +47,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.videox.app.download.DownloadManagerHelper
+import com.videox.app.download.ExtractionLanguage
 import com.videox.app.ui.theme.PremiumCard
+import com.videox.app.ui.theme.PremiumDropdown
 import com.videox.app.ui.theme.PremiumSecondaryButton
 import com.videox.app.ui.theme.PremiumTextField
 import com.videox.app.ui.theme.SectionHeader
@@ -262,7 +264,7 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                 Text("Subtitle languages", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    "Also decides which languages video-to-text extraction saves.",
+                    "Applies only to downloaded videos — video-to-text extraction has its own language setting below.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -277,9 +279,42 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                 )
                 SettingsDivider()
                 SettingRow(
+                    icon = Icons.Outlined.Bookmarks,
+                    title = "Embed chapters",
+                    description = "Add chapter markers to downloaded files when the video has chapters, so you can jump between sections in your player."
+                ) {
+                    Switch(
+                        checked = viewModel.embedChapters,
+                        onCheckedChange = { viewModel.updateEmbedChapters(it) }
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ---- Text extraction (v2.14) ----
+        SectionHeader(title = "Text extraction")
+        Spacer(modifier = Modifier.height(10.dp))
+        PremiumCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Extracted text is always saved in its original language — never translated or transliterated, unless the optional translation below is on.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                val extractionOptions = ExtractionLanguage.CATALOG
+                PremiumDropdown(
+                    label = "Extraction language",
+                    selectedLabel = ExtractionLanguage.entryFor(viewModel.extractionLanguage).displayName,
+                    options = extractionOptions.map { it.displayName },
+                    onSelect = { viewModel.updateExtractionLanguage(extractionOptions[it].code) }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingRow(
                     icon = Icons.Outlined.GraphicEq,
                     title = "Transcribe speech when there are no subtitles",
-                    description = "When a video has no subtitles, VideoX recognises the speech on your phone instead, so text can be extracted from any video with spoken audio. The first transcription downloads a voice model once (about 40 MB, English or Hindi by the language choice above) and no audio ever leaves your phone. Automatic transcription can mishear a few words."
+                    description = "When a video has no subtitles, VideoX recognises the speech on your phone instead, so text can be extracted from any video with spoken audio. Offline voice models exist for English, English (India), Hindi, Gujarati and Telugu only (Telugu is weak and may mishear a lot) — other languages get an honest message instead of a wrong-language transcript. The first transcription downloads the voice model once (about 40-100 MB, depending on the language) and no audio ever leaves your phone."
                 ) {
                     Switch(
                         checked = viewModel.transcribeFallback,
@@ -288,13 +323,23 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                 }
                 SettingsDivider()
                 SettingRow(
-                    icon = Icons.Outlined.Bookmarks,
-                    title = "Embed chapters",
-                    description = "Add chapter markers to downloaded files when the video has chapters, so you can jump between sections in your player."
+                    icon = Icons.Outlined.Language,
+                    title = "Translate extracted text (optional)",
+                    description = "Also save a translated copy of the extracted text as a separate file. The original-language file is kept untouched. Translation runs on your phone (ML Kit, free, no account) and downloads a language model once (about 30 MB). Nothing is ever translated unless this is on."
                 ) {
                     Switch(
-                        checked = viewModel.embedChapters,
-                        onCheckedChange = { viewModel.updateEmbedChapters(it) }
+                        checked = viewModel.translateEnabled,
+                        onCheckedChange = { viewModel.updateTranslateEnabled(it) }
+                    )
+                }
+                if (viewModel.translateEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val translateTargets = ExtractionLanguage.translationTargets
+                    PremiumDropdown(
+                        label = "Translate to",
+                        selectedLabel = ExtractionLanguage.entryFor(viewModel.translateTargetLanguage).displayName,
+                        options = translateTargets.map { it.displayName },
+                        onSelect = { viewModel.updateTranslateTargetLanguage(translateTargets[it].code) }
                     )
                 }
             }
@@ -366,13 +411,13 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                 SettingRow(
                     icon = Icons.Outlined.Info,
                     title = "About VideoX",
-                    description = "Version 2.11  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)"
+                    description = "Version 2.14  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)"
                 ) {
                     // No trailing control.
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "VideoX 2.11 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. New in 2.9: a warning before downloading on a metered connection, an optional proxy setting, subtitle embedding, chapter markers, settings backup and restore, and a cleaner Audio only screen. New in 2.10: video-to-text extraction — save a video's subtitles/captions as a clean .txt file without downloading the video, or transcribe the speech on your phone when the video has no subtitles, so text can be extracted from any video with spoken audio. New in 2.11: a premium redesign — new purple identity, floating cards, gradient actions and a floating bottom bar. Every feature works exactly as before. It does not bypass DRM, paywalls or logins, and never collects passwords.",
+                    "VideoX 2.14 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. New in 2.9: a warning before downloading on a metered connection, an optional proxy setting, subtitle embedding, chapter markers, settings backup and restore, and a cleaner Audio only screen. New in 2.10: video-to-text extraction — save a video's subtitles/captions as a clean .txt file without downloading the video, or transcribe the speech on your phone when the video has no subtitles, so text can be extracted from any video with spoken audio. New in 2.11: a premium redesign — new purple identity, floating cards, gradient actions and a floating bottom bar. Every feature works exactly as before. New in 2.14: original-language text extraction — Auto Detect finds the video's own language and saves its subtitles in that language (Devanagari stays Devanagari), speech transcription uses the voice model for the video's language, and an optional on-device translation saves a separate translated file. It does not bypass DRM, paywalls or logins, and never collects passwords.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
