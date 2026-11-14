@@ -13,8 +13,8 @@ android {
         applicationId = "com.videox.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 15
-        versionName = "2.13"
+        versionCode = 16
+        versionName = "2.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -111,6 +111,11 @@ dependencies {
     // declares them the same way). JNA is Vosk's native bridge.
     implementation("com.alphacephei:vosk-android:0.3.75@aar")
     implementation("net.java.dev.jna:jna:5.18.1@aar")
+
+    // v2.14: optional on-device translation of extracted text.
+    // Standalone ML Kit SDK — free, no API key, no account, no cloud
+    // service; models download to the phone via Play Services.
+    implementation("com.google.mlkit:translate:17.0.3")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
