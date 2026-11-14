@@ -18,9 +18,15 @@ import org.vosk.Recognizer
  * speech, so text can be extracted from ANY video with spoken audio.
  *
  * Everything runs on the phone — no audio ever leaves the device. The
- * voice model (~40 MB download, English or Hindi) is fetched once from
- * alphacephei.com, unpacked into the app's private files dir, and reused
- * for every later transcription. The ZIP is deleted after unpacking.
+ * voice model for the video's language is fetched once from
+ * alphacephei.com, unpacked into the app's private files dir, and
+ * reused for every later transcription. The ZIP is deleted after
+ * unpacking. Which languages have a model is decided by the
+ * extraction language catalog ([ExtractionLanguage]): English,
+ * English (India), Hindi, Gujarati and Telugu only. A language with
+ * no model is reported honestly — v2.10-v2.13 silently transcribed
+ * every language with the English model, which turned Hindi speech
+ * into Roman/English output instead of Devanagari (v2.14 fix).
  *
  * The Vosk API used here was verified against the real
  * vosk-android 0.3.75 AAR with javap: Model(String), Recognizer(Model,
@@ -29,22 +35,25 @@ import org.vosk.Recognizer
 object SpeechTranscriber {
 
     private const val MODEL_BASE_URL = "https://alphacephei.com/vosk/models/"
-    private const val ENGLISH_MODEL = "vosk-model-small-en-us-0.15"
-    private const val HINDI_MODEL = "vosk-model-small-hi-0.22"
 
     /** Sample rate Vosk models expect: 16 kHz, mono, 16-bit PCM. */
     const val SAMPLE_RATE = 16000f
 
-    /** Model name for a language code: "hi" -> Hindi, anything else -> English. */
-    fun modelNameFor(language: String): String =
-        if (language.trim().lowercase() == "hi") HINDI_MODEL else ENGLISH_MODEL
+    /**
+     * Model directory name for a language code, from the extraction
+     * language catalog, or null when no offline voice model exists
+     * for that language. Never substitutes another language's model.
+     */
+    fun modelNameFor(language: String): String? =
+        ExtractionLanguage.resolveVoskModel(language)
 
     /**
      * Return the unpacked model directory for [language], downloading
      * and unpacking it on first use. [onDownloadProgress] receives
      * 0-100 while the model ZIP is downloading (only on first use).
-     * Throws IOException when the download or unpacking fails — the
-     * caller reports it honestly and nothing is left half-installed
+     * Throws IOException when the language has no offline voice
+     * model, or when the download or unpacking fails — the caller
+     * reports it honestly and nothing is left half-installed
      * (a failed unpack removes the partial directory).
      */
     fun ensureModel(
@@ -53,6 +62,11 @@ object SpeechTranscriber {
         onDownloadProgress: (Int) -> Unit
     ): File {
         val name = modelNameFor(language)
+            ?: throw IOException(
+                "There is no offline voice model for ${ExtractionLanguage.displayName(language)} yet, " +
+                    "so speech in that language cannot be transcribed on this phone. " +
+                    "Offline transcription works for ${ExtractionLanguage.voskSupportedNames()}."
+            )
         val modelsDir = File(context.filesDir, "vosk-models")
         val modelDir = File(modelsDir, name)
         if (isValidModelDir(modelDir)) return modelDir
