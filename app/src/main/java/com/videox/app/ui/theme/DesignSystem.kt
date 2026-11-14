@@ -23,9 +23,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
@@ -467,7 +467,11 @@ fun PremiumDropdown(
                 .menuAnchor()
                 .fillMaxWidth()
         )
-        ExposedDropdownMenu(
+        // NOTE: Material3's old ExposedDropdownMenu composable does
+        // not exist in the resolved Material3 version (build #152
+        // failed on it), so the menu is a plain DropdownMenu inside
+        // the ExposedDropdownMenuBox — the current documented pattern.
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
