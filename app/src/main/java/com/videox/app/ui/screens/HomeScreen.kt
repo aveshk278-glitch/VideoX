@@ -42,10 +42,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.videox.app.download.DownloadManagerHelper
+import com.videox.app.download.ExtractionLanguage
 import com.videox.app.download.QualitySelector
 import com.videox.app.ui.theme.BrandHeader
 import com.videox.app.ui.theme.EmptyState
 import com.videox.app.ui.theme.PremiumCard
+import com.videox.app.ui.theme.PremiumDropdown
 import com.videox.app.ui.theme.PremiumPrimaryButton
 import com.videox.app.ui.theme.PremiumProgress
 import com.videox.app.ui.theme.PremiumSecondaryButton
@@ -170,6 +172,20 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
             Text("Download", style = MaterialTheme.typography.labelLarge)
         }
         Spacer(modifier = Modifier.height(10.dp))
+        // Language override for this extraction (v2.14): null means
+        // "use the Settings default". The choice stays until changed.
+        val overrideOptions = listOf(null) + ExtractionLanguage.CATALOG.map { it.code }
+        PremiumDropdown(
+            label = "Text language",
+            selectedLabel = viewModel.extractionOverride?.let { ExtractionLanguage.displayName(it) }
+                ?: "Use Settings default (${ExtractionLanguage.displayName(viewModel.extractionLanguage)})",
+            options = overrideOptions.map { code ->
+                code?.let { ExtractionLanguage.displayName(it) } ?: "Use Settings default"
+            },
+            onSelect = { viewModel.updateExtractionOverride(overrideOptions[it]) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
         PremiumSecondaryButton(
             onClick = { viewModel.extractText() },
             enabled = !viewModel.extractingText,
@@ -179,10 +195,18 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Saves the video's subtitles/captions as a clean .txt file — the video itself is not downloaded. Languages come from Settings.",
+            text = "Saves the video's subtitles/captions as a clean .txt file in the original language — the video itself is not downloaded. Pick a language above, or use the Settings default.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        viewModel.detectedLanguageLabel?.let { label ->
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         viewModel.transcriptionProgress?.let { progress ->
             Spacer(modifier = Modifier.height(4.dp))
             Text(
