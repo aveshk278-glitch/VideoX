@@ -11,9 +11,13 @@ import androidx.lifecycle.viewModelScope
 import com.videox.app.VideoXApp
 import com.videox.app.data.DownloadItem
 import com.videox.app.download.DownloadManagerHelper
+import com.videox.app.download.ExtractionLanguage
 import com.videox.app.download.QualitySelector
+import com.videox.app.download.SpeechTranscriber
 import com.videox.app.download.SubtitleText
+import com.videox.app.download.Translator
 import com.videox.app.download.YtDlpEngine
+import com.videox.app.download.YtDlpJson
 import com.videox.app.download.YtVideoInfo
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +87,25 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         private set
 
     var transcribeFallback by mutableStateOf(repository.transcribeFallback)
+        private set
+
+    // ---- v2.14 settings (original-language text extraction) ----
+
+    var extractionLanguage by mutableStateOf(repository.extractionLanguage)
+        private set
+
+    var translateEnabled by mutableStateOf(repository.translateEnabled)
+        private set
+
+    var translateTargetLanguage by mutableStateOf(repository.translateTargetLanguage)
+        private set
+
+    /** Per-extraction language override from Home, or null = use the Settings default. */
+    var extractionOverride by mutableStateOf<String?>(null)
+        private set
+
+    /** "Hindi • original subtitles" for the last extraction, shown on Home. */
+    var detectedLanguageLabel by mutableStateOf<String?>(null)
         private set
 
     /** Progress text while speech transcription (or its model download) runs. */
@@ -247,6 +270,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun onUrlChange(value: String) {
         urlInput = value
         message = null
+        detectedLanguageLabel = null
         if (videoInfo != null) {
             videoInfo = null
             selectedQualityHeight = null
@@ -319,6 +343,25 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun updateTranscribeFallback(enabled: Boolean) {
         transcribeFallback = enabled
         repository.transcribeFallback = enabled
+    }
+
+    fun updateExtractionLanguage(value: String) {
+        extractionLanguage = if (ExtractionLanguage.isKnownCode(value)) value else ExtractionLanguage.AUTO
+        repository.extractionLanguage = extractionLanguage
+    }
+
+    fun updateTranslateEnabled(enabled: Boolean) {
+        translateEnabled = enabled
+        repository.translateEnabled = enabled
+    }
+
+    fun updateTranslateTargetLanguage(value: String) {
+        translateTargetLanguage = if (ExtractionLanguage.isTranslationTarget(value)) value else "en"
+        repository.translateTargetLanguage = translateTargetLanguage
+    }
+
+    fun updateExtractionOverride(value: String?) {
+        extractionOverride = value?.takeIf { ExtractionLanguage.isKnownCode(it) }
     }
 
     /** True when the typed proxy text is non-empty but not a usable proxy URL. */
@@ -594,13 +637,25 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Video-to-text extraction (v2.10): save the video's subtitles /
-     * captions as a clean .txt file in Downloads/VideoX, without
-     * downloading the video. The subtitle languages come from the
-     * Settings choice (English / Hindi / All). A video with no
-     * subtitles in those languages produces an honest message, never
-     * an empty file — yt-dlp exits cleanly and writes nothing in
-     * that case, so the created files are what decides success.
+     * Video-to-text extraction (v2.10, original-language upgrade in
+     * v2.14): save the video's subtitles / captions as a clean .txt
+     * file in Downloads/VideoX, without downloading the video.
+     *
+     * Language handling (v2.14): the effective language is the
+     * per-extraction override from Home, or the Settings default
+     * ("Auto Detect"). Auto Detect / Original Language probe the
+     * video's own language and subtitle tracks and prefer the
+     * video's language; an explicit language requests that track
+     * directly; "All" saves every track. Text is NEVER translated
+     * or transliterated unless the optional translation toggle is
+     * on, and the translation is always a SEPARATE file — the
+     * original-language file is kept untouched.
+     *
+     * When no subtitles exist and speech transcription is on, the
+     * speech is transcribed on the phone with the voice model for
+     * the video's language — never silently with the English model
+     * (the v2.10-v2.13 bug). Languages with no offline voice model
+     * get an honest message instead of a wrong-language transcript.
      * No metered-network warning here: subtitle files are kilobytes.
      */
     fun extractText() {
@@ -623,6 +678,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         extractingText = true
         message = null
+        detectedLanguageLabel = null
+        // Snapshot the settings on the main thread: the extraction
+        // runs on IO and must not read Compose state there.
+        val effectiveLanguage = extractionOverride ?: extractionLanguage
+        val fallbackOn = transcribeFallback
+        val doTranslate = translateEnabled
+        val translateTarget = translateTargetLanguage
         viewModelScope.launch(Dispatchers.IO) {
             queueSemaphore.acquire()
             try {
@@ -632,151 +694,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 val baseName = QualitySelector.resolveOutputBaseName(info.title, customFileName)
                 val dir = YtDlpEngine.downloadDir()
                 val proxy = effectiveProxyUrl
-                YtDlpEngine.extractSubtitles(
-                    url = url,
-                    outputBaseName = baseName,
-                    subtitleLangs = subtitleLangs,
-                    proxyUrl = proxy,
-                    processId = "videox_text_${System.currentTimeMillis()}"
-                )
-                val subFiles = dir.listFiles()
-                    ?.filter {
-                        it.name.startsWith(baseName) &&
-                            (it.name.endsWith(".srt") || it.name.endsWith(".vtt")) &&
-                            !it.name.endsWith(".part")
-                    }
-                    ?: emptyList()
-                if (subFiles.isEmpty() && !transcribeFallback) {
-                    val langsText = if (subtitleLangs == "all") "any language" else "“$subtitleLangs”"
-                    withContext(Dispatchers.Main) {
-                        showMessage(
-                            "This video has no subtitles or captions in $langsText — " +
-                                "so there is no text to extract. " +
-                                "Try the “All” subtitle language in Settings, or turn on speech transcription there.",
-                            isError = true
-                        )
-                    }
-                } else if (subFiles.isEmpty()) {
-                    // No subtitles — transcribe the speech on the phone
-                    // (Vosk, offline). First use downloads a ~40 MB voice
-                    // model once; the audio never leaves the phone.
-                    val reportProgress: (String) -> Unit = { text ->
-                        viewModelScope.launch { transcriptionProgress = text }
-                    }
-                    reportProgress("No subtitles found — preparing speech transcription…")
-                    val modelDir = com.videox.app.download.SpeechTranscriber.ensureModel(
-                        appContext, subtitleLangs
-                    ) { percent ->
-                        reportProgress("Downloading voice model (once)… $percent%")
-                    }
-                    val wavFile = File(appContext.cacheDir, "videox_stt_${System.currentTimeMillis()}.wav")
-                    try {
-                        reportProgress("Extracting audio for transcription…")
-                        YtDlpEngine.extractAudioWav(
-                            url = url,
-                            outputFile = wavFile,
-                            proxyUrl = proxy,
-                            processId = "videox_stt_${System.currentTimeMillis()}"
-                        )
-                        if (!wavFile.exists() || wavFile.length() == 0L) {
-                            throw IllegalStateException("The video's audio could not be extracted.")
-                        }
-                        val text = com.videox.app.download.SpeechTranscriber.transcribe(
-                            wavFile, modelDir
-                        ) { percent ->
-                            reportProgress("Transcribing speech… $percent%")
-                        }
-                        if (text.isBlank()) {
-                            withContext(Dispatchers.Main) {
-                                showMessage(
-                                    "No speech could be recognised in this video — " +
-                                        "it may have no spoken audio, or only music.",
-                                    isError = true
-                                )
-                            }
-                        } else {
-                            val txtName = "$baseName.txt"
-                            File(dir, txtName).writeText(text)
-                            repository.insertYtDownload(
-                                DownloadItem(
-                                    url = url,
-                                    fileName = txtName,
-                                    status = "COMPLETED",
-                                    progress = 100,
-                                    mode = "TEXT",
-                                    formatLabel = "Transcribed text",
-                                    engine = "YTDLP"
-                                )
-                            )
-                            withContext(Dispatchers.Main) {
-                                urlInput = ""
-                                videoInfo = null
-                                showMessage(
-                                    "Transcribed: $txtName — saved to Downloads/VideoX. " +
-                                        "Speech recognition is automatic, so a few words may be wrong."
-                                )
-                            }
-                        }
-                    } finally {
-                        try {
-                            wavFile.delete()
-                        } catch (_: Exception) {
-                        }
-                    }
-                } else {
-                    val converted = mutableListOf<String>()
-                    var alreadyCount = 0
-                    for (sub in subFiles) {
-                        val txtName = sub.nameWithoutExtension + ".txt"
-                        val txtFile = File(dir, txtName)
-                        if (txtFile.exists()) {
-                            alreadyCount++
-                            continue
-                        }
-                        val plain = try {
-                            SubtitleText.toPlainText(sub.readText())
-                        } catch (_: Exception) {
-                            ""
-                        }
-                        if (plain.isBlank()) continue
-                        txtFile.writeText(plain)
-                        converted += txtName
-                        // The .txt is the deliverable — remove the
-                        // intermediate subtitle file so the folder
-                        // is not cluttered with two files per video.
-                        try {
-                            sub.delete()
-                        } catch (_: Exception) {
-                            // Keep going — a leftover .srt is harmless.
-                        }
-                    }
-                    for (name in converted) {
-                        repository.insertYtDownload(
-                            DownloadItem(
-                                url = url,
-                                fileName = name,
-                                status = "COMPLETED",
-                                progress = 100,
-                                mode = "TEXT",
-                                formatLabel = "Text (.txt)",
-                                engine = "YTDLP"
-                            )
-                        )
-                    }
-                    withContext(Dispatchers.Main) {
-                        when {
-                            converted.isNotEmpty() -> {
-                                urlInput = ""
-                                videoInfo = null
-                                showMessage("Text extracted: ${converted.joinToString(", ")} — saved to Downloads/VideoX")
-                            }
-                            alreadyCount > 0 -> showMessage("Already extracted: the text file is already in Downloads/VideoX.")
-                            else -> showMessage(
-                                "The subtitles found for this video were empty — no text file was created.",
-                                isError = true
-                            )
-                        }
-                    }
+                when (effectiveLanguage) {
+                    ExtractionLanguage.ALL ->
+                        extractAllLanguages(url, baseName, dir, proxy, fallbackOn)
+                    ExtractionLanguage.AUTO, ExtractionLanguage.ORIGINAL ->
+                        extractAutoLanguage(url, baseName, dir, proxy, fallbackOn, doTranslate, translateTarget)
+                    else ->
+                        extractOneLanguage(url, baseName, dir, proxy, effectiveLanguage, fallbackOn, doTranslate, translateTarget)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -794,6 +718,408 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
         }
+    }
+
+    /** Outcome of requesting subtitle tracks from yt-dlp. */
+    private sealed interface SubtitleOutcome {
+        /** .txt files written this run (normally exactly one). */
+        data class Written(val txtNames: List<String>) : SubtitleOutcome
+        /** The subtitle files exist but their .txt files already did. */
+        data object AlreadyExtracted : SubtitleOutcome
+        /** yt-dlp wrote no subtitle files at all. */
+        data object NoSubtitles : SubtitleOutcome
+    }
+
+    /** "All languages": save every subtitle track, each to its own .txt file. */
+    private suspend fun extractAllLanguages(
+        url: String,
+        baseName: String,
+        dir: File,
+        proxy: String?,
+        fallbackOn: Boolean
+    ) {
+        YtDlpEngine.extractSubtitles(
+            url = url,
+            outputBaseName = baseName,
+            subtitleLangs = ExtractionLanguage.ALL,
+            proxyUrl = proxy,
+            processId = "videox_text_${System.currentTimeMillis()}"
+        )
+        val (converted, alreadyCount) = convertSubtitleFiles(dir, baseName)
+        for (name in converted) {
+            recordTextFile(url, name, "Text (.txt)")
+        }
+        withContext(Dispatchers.Main) {
+            when {
+                converted.isNotEmpty() -> {
+                    urlInput = ""
+                    videoInfo = null
+                    detectedLanguageLabel = "All languages • original subtitles"
+                    showMessage("Text extracted: ${converted.joinToString(", ")} — saved to Downloads/VideoX")
+                }
+                alreadyCount > 0 -> showMessage("Already extracted: the text files are already in Downloads/VideoX.")
+                else -> showMessage(
+                    "This video has no subtitles or captions in any language — so there is no text to extract. " +
+                        if (fallbackOn) {
+                            "Speech transcription needs one language: pick Auto Detect or a language " +
+                                "in Settings (or the override on Home) to transcribe this video."
+                        } else {
+                            "Turn on speech transcription in Settings and pick Auto Detect or a language " +
+                                "to transcribe the spoken audio instead."
+                        },
+                    isError = true
+                )
+            }
+        }
+    }
+
+    /** Auto Detect / Original Language: probe the video, prefer its own language's track. */
+    private suspend fun extractAutoLanguage(
+        url: String,
+        baseName: String,
+        dir: File,
+        proxy: String?,
+        fallbackOn: Boolean,
+        doTranslate: Boolean,
+        translateTarget: String
+    ) {
+        // A failed probe throws: the outer catch shows the mapped error.
+        val json = YtDlpEngine.dumpVideoJson(url, proxy, "videox_probe_${System.currentTimeMillis()}")
+        val probe = YtDlpJson.parse(json)
+        val chosenRaw = YtDlpJson.chooseSubtitleLanguage(probe, ExtractionLanguage.AUTO)
+        if (chosenRaw == null) {
+            transcribeOrExplain(url, baseName, dir, proxy, probe.videoLanguage, fallbackOn, doTranslate, translateTarget)
+            return
+        }
+        // Track keys can be regional ("pt-BR", "en-US"). Subtitle
+        // requests only accept plain 2-3 letter codes (the sanitiser
+        // drops anything else and would fall back to English), so the
+        // request, the label and the translation source all use the
+        // base language — "pt-BR" is requested and reported as
+        // Portuguese, never silently as English.
+        val chosen = chosenRaw.substringBefore('-').substringBefore('_').lowercase()
+        when (val outcome = requestAndConvert(url, baseName, dir, proxy, chosen)) {
+            is SubtitleOutcome.Written -> finishExtraction(
+                url = url,
+                dir = dir,
+                txtNames = outcome.txtNames,
+                sourceCode = chosen,
+                label = "${ExtractionLanguage.displayName(chosen)} • original subtitles",
+                formatLabel = "Text (.txt)",
+                actionWord = "Text extracted",
+                note = null,
+                doTranslate = doTranslate,
+                translateTarget = translateTarget
+            )
+            SubtitleOutcome.AlreadyExtracted -> withContext(Dispatchers.Main) {
+                showMessage("Already extracted: the text file is already in Downloads/VideoX.")
+            }
+            // The probe listed a track but yt-dlp wrote nothing
+            // usable: fall through to transcription with the video's
+            // own language, exactly as if there were no tracks.
+            SubtitleOutcome.NoSubtitles ->
+                transcribeOrExplain(url, baseName, dir, proxy, probe.videoLanguage, fallbackOn, doTranslate, translateTarget)
+        }
+    }
+
+    /** One explicit language: request that track directly, no probe needed. */
+    private suspend fun extractOneLanguage(
+        url: String,
+        baseName: String,
+        dir: File,
+        proxy: String?,
+        languageCode: String,
+        fallbackOn: Boolean,
+        doTranslate: Boolean,
+        translateTarget: String
+    ) {
+        val subtitleCode = ExtractionLanguage.subtitleCodeFor(languageCode)
+        when (val outcome = requestAndConvert(url, baseName, dir, proxy, subtitleCode)) {
+            is SubtitleOutcome.Written -> finishExtraction(
+                url = url,
+                dir = dir,
+                txtNames = outcome.txtNames,
+                sourceCode = languageCode,
+                label = "${ExtractionLanguage.displayName(languageCode)} • original subtitles",
+                formatLabel = "Text (.txt)",
+                actionWord = "Text extracted",
+                note = null,
+                doTranslate = doTranslate,
+                translateTarget = translateTarget
+            )
+            SubtitleOutcome.AlreadyExtracted -> withContext(Dispatchers.Main) {
+                showMessage("Already extracted: the text file is already in Downloads/VideoX.")
+            }
+            SubtitleOutcome.NoSubtitles ->
+                transcribeOrExplain(url, baseName, dir, proxy, languageCode, fallbackOn, doTranslate, translateTarget)
+        }
+    }
+
+    /** Request one subtitle track and convert whatever yt-dlp wrote. */
+    private suspend fun requestAndConvert(
+        url: String,
+        baseName: String,
+        dir: File,
+        proxy: String?,
+        subtitleCode: String
+    ): SubtitleOutcome {
+        YtDlpEngine.extractSubtitles(
+            url = url,
+            outputBaseName = baseName,
+            subtitleLangs = subtitleCode,
+            proxyUrl = proxy,
+            processId = "videox_text_${System.currentTimeMillis()}"
+        )
+        val (converted, alreadyCount) = convertSubtitleFiles(dir, baseName)
+        return when {
+            converted.isNotEmpty() -> SubtitleOutcome.Written(converted)
+            alreadyCount > 0 -> SubtitleOutcome.AlreadyExtracted
+            else -> SubtitleOutcome.NoSubtitles
+        }
+    }
+
+    /**
+     * No subtitles: transcribe the speech on the phone with the voice
+     * model for [languageCode], or explain honestly when that is not
+     * possible. [languageCode] is the video's own language (Auto
+     * Detect) or the requested language (explicit choice), or null
+     * when the language is genuinely unknown — only then is the
+     * English model used, and the result is labelled as such.
+     */
+    private suspend fun transcribeOrExplain(
+        url: String,
+        baseName: String,
+        dir: File,
+        proxy: String?,
+        languageCode: String?,
+        fallbackOn: Boolean,
+        doTranslate: Boolean,
+        translateTarget: String
+    ) {
+        if (!fallbackOn) {
+            val langText = languageCode?.let { ExtractionLanguage.displayName(it) }
+            withContext(Dispatchers.Main) {
+                showMessage(
+                    if (langText != null) {
+                        "This video has no subtitles or captions in $langText — so there is no text to extract. " +
+                            "Turn on speech transcription in Settings to transcribe the spoken audio instead."
+                    } else {
+                        "This video has no subtitles or captions — so there is no text to extract. " +
+                            "Turn on speech transcription in Settings to transcribe the spoken audio instead."
+                    },
+                    isError = true
+                )
+            }
+            return
+        }
+        val resolved = languageCode?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val modelCode = resolved ?: "en"
+        if (SpeechTranscriber.modelNameFor(modelCode) == null) {
+            val name = ExtractionLanguage.displayName(modelCode)
+            withContext(Dispatchers.Main) {
+                showMessage(
+                    "This video has no subtitles, and there is no offline voice model for $name yet, " +
+                        "so its speech cannot be transcribed on this phone. Offline transcription works for " +
+                        "${ExtractionLanguage.voskSupportedNames()}.",
+                    isError = true
+                )
+            }
+            return
+        }
+        val text = transcribeSpeech(url, proxy, modelCode)
+        if (text.isBlank()) {
+            withContext(Dispatchers.Main) {
+                showMessage(
+                    "No speech could be recognised in this video — " +
+                        "it may have no spoken audio, or only music.",
+                    isError = true
+                )
+            }
+            return
+        }
+        val txtName = "$baseName.txt"
+        File(dir, txtName).writeText(text)
+        val label = if (resolved != null) {
+            "${ExtractionLanguage.displayName(resolved)} • transcribed speech"
+        } else {
+            "Unknown language • transcribed speech (English voice model)"
+        }
+        finishExtraction(
+            url = url,
+            dir = dir,
+            txtNames = listOf(txtName),
+            sourceCode = modelCode,
+            label = label,
+            formatLabel = "Transcribed text",
+            actionWord = "Transcribed",
+            note = "Speech recognition is automatic, so a few words may be wrong.",
+            doTranslate = doTranslate,
+            translateTarget = translateTarget
+        )
+    }
+
+    /** Transcribe the video's speech on the phone. Returns recognised text (may be blank). */
+    private suspend fun transcribeSpeech(url: String, proxy: String?, languageCode: String): String {
+        val reportProgress: (String) -> Unit = { text ->
+            viewModelScope.launch { transcriptionProgress = text }
+        }
+        reportProgress("No subtitles found — preparing speech transcription…")
+        val modelDir = SpeechTranscriber.ensureModel(appContext, languageCode) { percent ->
+            reportProgress("Downloading voice model (once)… $percent%")
+        }
+        val wavFile = File(appContext.cacheDir, "videox_stt_${System.currentTimeMillis()}.wav")
+        try {
+            reportProgress("Extracting audio for transcription…")
+            YtDlpEngine.extractAudioWav(
+                url = url,
+                outputFile = wavFile,
+                proxyUrl = proxy,
+                processId = "videox_stt_${System.currentTimeMillis()}"
+            )
+            if (!wavFile.exists() || wavFile.length() == 0L) {
+                throw IllegalStateException("The video's audio could not be extracted.")
+            }
+            return SpeechTranscriber.transcribe(wavFile, modelDir) { percent ->
+                reportProgress("Transcribing speech… $percent%")
+            }
+        } finally {
+            try {
+                wavFile.delete()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Convert subtitle files for [baseName] in [dir] to .txt. Returns
+     * the names written this run plus how many already existed.
+     * The .txt is the deliverable — the intermediate subtitle file is
+     * removed so the folder is not cluttered with two files per video.
+     */
+    private suspend fun convertSubtitleFiles(dir: File, baseName: String): Pair<List<String>, Int> {
+        val subFiles = dir.listFiles()
+            ?.filter {
+                it.name.startsWith(baseName) &&
+                    (it.name.endsWith(".srt") || it.name.endsWith(".vtt")) &&
+                    !it.name.endsWith(".part")
+            }
+            ?: emptyList()
+        val converted = mutableListOf<String>()
+        var alreadyCount = 0
+        for (sub in subFiles) {
+            val txtName = sub.nameWithoutExtension + ".txt"
+            val txtFile = File(dir, txtName)
+            if (txtFile.exists()) {
+                alreadyCount++
+                continue
+            }
+            val plain = try {
+                SubtitleText.toPlainText(sub.readText())
+            } catch (_: Exception) {
+                ""
+            }
+            if (plain.isBlank()) continue
+            txtFile.writeText(plain)
+            converted += txtName
+            try {
+                sub.delete()
+            } catch (_: Exception) {
+                // Keep going — a leftover .srt is harmless.
+            }
+        }
+        return converted to alreadyCount
+    }
+
+    /** Record a finished extraction, optionally translate it, and report the result. */
+    private suspend fun finishExtraction(
+        url: String,
+        dir: File,
+        txtNames: List<String>,
+        sourceCode: String,
+        label: String,
+        formatLabel: String,
+        actionWord: String,
+        note: String?,
+        doTranslate: Boolean,
+        translateTarget: String
+    ) {
+        for (name in txtNames) {
+            recordTextFile(url, name, formatLabel)
+        }
+        var translatedName: String? = null
+        var translationError: String? = null
+        if (doTranslate && txtNames.isNotEmpty()) {
+            try {
+                val result = maybeTranslate(dir, txtNames.first(), sourceCode, translateTarget)
+                if (result != null) {
+                    translatedName = result.first
+                    if (result.second) {
+                        recordTextFile(url, result.first, "Translated text")
+                    }
+                }
+            } catch (e: Exception) {
+                // The original extraction succeeded: keep it, and say
+                // the translation failed instead of failing everything.
+                translationError = e.message ?: "translation failed"
+            }
+        }
+        withContext(Dispatchers.Main) {
+            urlInput = ""
+            videoInfo = null
+            detectedLanguageLabel = label
+            val files = txtNames + listOfNotNull(translatedName)
+            var text = "$actionWord: ${files.joinToString(", ")} — saved to Downloads/VideoX"
+            if (note != null) text += " $note"
+            if (translationError != null) {
+                text += " Translation failed: $translationError"
+            }
+            showMessage(text)
+        }
+    }
+
+    /**
+     * Translate one extracted file when the languages differ and both
+     * are supported. Returns the translated file name plus whether it
+     * was newly written, or null when translation was skipped (same
+     * language, unsupported language, or empty text). Throws when
+     * translation itself fails. The original file is never touched.
+     */
+    private suspend fun maybeTranslate(
+        dir: File,
+        txtName: String,
+        sourceCode: String,
+        targetCode: String
+    ): Pair<String, Boolean>? {
+        val source = Translator.mlKitCode(sourceCode) ?: return null
+        val target = Translator.mlKitCode(targetCode) ?: return null
+        if (source == target) return null
+        val translatedName = txtName.removeSuffix(".txt") + "_translated_$targetCode.txt"
+        val translatedFile = File(dir, translatedName)
+        if (translatedFile.exists()) return translatedName to false
+        val text = File(dir, txtName).readText()
+        if (text.isBlank()) return null
+        viewModelScope.launch { transcriptionProgress = "Translating text…" }
+        val translated = Translator.translateText(sourceCode, targetCode, text) { percent ->
+            viewModelScope.launch { transcriptionProgress = "Translating text… $percent%" }
+        }
+        if (translated.isBlank()) return null
+        translatedFile.writeText(translated)
+        return translatedName to true
+    }
+
+    /** Record one extracted/translated .txt file in the Downloads history. */
+    private suspend fun recordTextFile(url: String, fileName: String, formatLabel: String) {
+        repository.insertYtDownload(
+            DownloadItem(
+                url = url,
+                fileName = fileName,
+                status = "COMPLETED",
+                progress = 100,
+                mode = "TEXT",
+                formatLabel = formatLabel,
+                engine = "YTDLP"
+            )
+        )
     }
 
     private fun runYtDlpDownload(
@@ -1045,6 +1371,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         subtitleLangs = repository.subtitleLangs
         embedChapters = repository.embedChapters
         transcribeFallback = repository.transcribeFallback
+        extractionLanguage = repository.extractionLanguage
+        translateEnabled = repository.translateEnabled
+        translateTargetLanguage = repository.translateTargetLanguage
     }
 
     fun openDownload(downloadId: Long) {
