@@ -141,6 +141,31 @@ object YtDlpEngine {
     }
 
     /**
+     * Original-language detection (v2.14): run yt-dlp
+     * --dump-single-json --skip-download and return the raw JSON
+     * output, which the caller parses with [YtDlpJson] for the
+     * video's own language and its subtitle-track languages.
+     * VideoInfo exposes no subtitle/language fields (verified
+     * against the real 0.18.1 AAR), so this separate call is what
+     * Auto Detect needs. Nothing is downloaded. Throws when the
+     * engine returns no JSON.
+     */
+    fun dumpVideoJson(
+        url: String,
+        proxyUrl: String?,
+        processId: String
+    ): String {
+        if (!initialized) throw IllegalStateException(initError ?: "yt-dlp is not initialised yet.")
+        val request = YoutubeDLRequest(url)
+        request.addOption("--dump-single-json")
+        request.addOption("--skip-download")
+        proxyUrl?.takeIf { it.isNotBlank() }?.let { request.addOption("--proxy", it) }
+        val response = YoutubeDL.getInstance().execute(request, processId)
+        return response.out?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("yt-dlp returned no video information.")
+    }
+
+    /**
      * Video-to-text extraction (v2.10): download ONLY the video's
      * subtitles (manual subtitles plus auto-generated captions) as
      * .srt files, without downloading the video itself. The caller
