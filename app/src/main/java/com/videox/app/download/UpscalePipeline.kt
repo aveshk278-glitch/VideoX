@@ -95,10 +95,11 @@ object UpscalePipeline {
         try {
             onProgress(UpscaleProgress("Preparing", 0, 1, null))
             control.check()
-            if (!runner.verifyBinary()) {
+            val diagnosis = runner.diagnose()
+            if (!diagnosis.ok) {
                 throw IOException(
                     "The video processor could not be started on this phone, so upscaling is unavailable. " +
-                        "Try restarting VideoX."
+                        "Try restarting VideoX.\n\n" + runner.formatDiagnosis(diagnosis)
                 )
             }
             val probe = runner.probeVideo(inputFile)
