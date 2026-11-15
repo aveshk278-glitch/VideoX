@@ -160,6 +160,13 @@ class UpscalerViewModel(application: Application) : AndroidViewModel(application
                 val runner = FFmpegRunner(appContext)
                 val probed = runner.probeVideo(temp)
                 probe = probed
+                if (probed.fpsEstimated) {
+                    showMessage(
+                        "This video does not report its frame rate, so 30 fps is assumed. " +
+                            "If the upscaled video plays at the wrong speed, tell me and it can be fixed.",
+                        isError = false
+                    )
+                }
                 val profile = UpscaleMath.Profile.fromIndex(profileIndex)
                 if (!UpscaleMath.profileUsable(probed.height, profile)) {
                     showMessage(
