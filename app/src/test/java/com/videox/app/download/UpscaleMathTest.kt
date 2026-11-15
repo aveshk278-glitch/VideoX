@@ -103,22 +103,60 @@ class UpscaleMathTest {
 
     @Test
     fun parseProbeCsv_readsVideoLineAndAudioPresence() {
-        val probe = UpscaleMath.parseProbeCsv("1920,1080,30000/1001,12.480000", "aac")
+        val probe = UpscaleMath.parseProbeCsv("1920,1080,30000/1001,30/1,12.480000", "aac")
         assertNotNull(probe)
         assertEquals(1920, probe!!.width)
         assertEquals(1080, probe.height)
         assertEquals(29.97, probe.fps, 0.01)
         assertEquals(12.48, probe.durationSec, 0.001)
         assertTrue(probe.hasAudio)
+        assertFalse(probe.fpsEstimated)
 
-        val noAudio = UpscaleMath.parseProbeCsv("854,480,30/1,N/A", "")
+        val noAudio = UpscaleMath.parseProbeCsv("854,480,30/1,N/A,N/A", "")
         assertNotNull(noAudio)
         assertFalse(noAudio!!.hasAudio)
         assertEquals(0.0, noAudio.durationSec, 0.001)
 
         assertNull(UpscaleMath.parseProbeCsv("bad", ""))
-        assertNull(UpscaleMath.parseProbeCsv("1920,1080,0/0,10", ""))
-        assertNull(UpscaleMath.parseProbeCsv("0,1080,30/1,10", ""))
+        assertNull(UpscaleMath.parseProbeCsv("1920,1080,0/0,0/0,10", ""))
+        assertNull(UpscaleMath.parseProbeCsv("0,1080,30/1,30/1,10", ""))
+    }
+
+    @Test
+    fun parseProbeCsv_fallsBackToRFrameRateWhenAverageIsZero() {
+        val probe = UpscaleMath.parseProbeCsv("1280,720,0/0,30000/1001,10.0", "")
+        assertNotNull(probe)
+        assertEquals(29.97, probe!!.fps, 0.01)
+        assertFalse(probe.fpsEstimated)
+    }
+
+    @Test
+    fun parseProbeCsv_prefersAverageOverGarbageRFrameRate() {
+        val probe = UpscaleMath.parseProbeCsv("1280,720,25/1,garbage,10.0", "")
+        assertNotNull(probe)
+        assertEquals(25.0, probe!!.fps, 0.001)
+    }
+
+    @Test
+    fun parseProbeCsv_rejectsBothFrameRatesInvalid() {
+        assertNull(UpscaleMath.parseProbeCsv("1280,720,0/0,N/A,10.0", ""))
+        assertNull(UpscaleMath.parseProbeCsv("1280,720,N/A,0/0,10.0", ""))
+    }
+
+    @Test
+    fun parseProbeCsv_rejectsInsaneRFrameRateClockValue() {
+        assertNull(UpscaleMath.parseProbeCsv("1280,720,0/0,90000/1,10.0", ""))
+        assertNull(UpscaleMath.parseProbeCsv("1280,720,90000/1,90000/1,10.0", ""))
+        assertNull(UpscaleMath.parseProbeCsv("1280,720,0.5,0.5,10.0", ""))
+        assertNull(UpscaleMath.parseProbeCsv("1280,720,300/1,300/1,10.0", ""))
+    }
+
+    @Test
+    fun parseProbeCsv_readsDurationFromNewPosition() {
+        val probe = UpscaleMath.parseProbeCsv("1280,720,30/1,99/1,7.25", "")
+        assertNotNull(probe)
+        assertEquals(30.0, probe!!.fps, 0.001)
+        assertEquals(7.25, probe.durationSec, 0.001)
     }
 
     @Test
