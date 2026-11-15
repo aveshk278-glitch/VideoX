@@ -12,12 +12,18 @@
     <!-- DownloadManager writes to public Downloads on its own; no storage
          permission is needed for setDestinationInExternalPublicDir on API 29+. -->
 
+    <!-- largeHeap: AI upscaling holds one 4x frame bitmap in memory
+         (a 1080p frame upscaled 4x is ~150 MB of pixels). The job still
+         releases every frame buffer immediately and recovers from
+         out-of-memory by shrinking its tiles — the larger heap only
+         raises the ceiling, it never assumes the whole RAM is free. -->
     <application
         android:name=".VideoXApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:extractNativeLibs="true"
+        android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -43,6 +49,11 @@
 
         <service
             android:name=".download.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".download.UpscaleService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
