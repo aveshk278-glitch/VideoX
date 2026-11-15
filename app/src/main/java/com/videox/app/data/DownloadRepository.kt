@@ -89,6 +89,36 @@ class DownloadRepository(
         get() = prefs.getString("translate_target", "en") ?: "en"
         set(value) { prefs.edit().putString("translate_target", value).apply() }
 
+    // ---- v2.15 settings (AI video upscaler) ----
+
+    /** AI provider for upscaling: "auto" (benchmark winner) or a provider key. */
+    var upscaleProvider: String
+        get() = (prefs.getString("upscale_provider", "auto") ?: "auto")
+            .takeIf { it in setOf("auto", "cpu", "xnnpack", "nnapi", "webgpu") } ?: "auto"
+        set(value) {
+            val clean = value.takeIf { it in setOf("auto", "cpu", "xnnpack", "nnapi", "webgpu") } ?: "auto"
+            prefs.edit().putString("upscale_provider", clean).apply()
+        }
+
+    /** Upscaler mode: "performance" (benchmark winner) or "battery" (CPU only, smaller tiles). */
+    var upscaleMode: String
+        get() = (prefs.getString("upscale_mode", "performance") ?: "performance")
+            .takeIf { it == "battery" || it == "performance" } ?: "performance"
+        set(value) {
+            val clean = if (value == "battery") "battery" else "performance"
+            prefs.edit().putString("upscale_mode", clean).apply()
+        }
+
+    /** Stored benchmark results in UpscaleMath's compact format ("" = never run). */
+    var upscaleBenchmark: String
+        get() = prefs.getString("upscale_benchmark", "") ?: ""
+        set(value) { prefs.edit().putString("upscale_benchmark", value).apply() }
+
+    /** Upscale history as JSON (UpscaleHistory format). Not part of settings backup. */
+    var upscaleHistoryJson: String
+        get() = prefs.getString("upscale_history", "") ?: ""
+        set(value) { prefs.edit().putString("upscale_history", value).apply() }
+
     fun isOnline(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = cm.activeNetwork ?: return false
@@ -133,7 +163,10 @@ class DownloadRepository(
                 "transcribe_fallback" to transcribeFallback.toString(),
                 "extraction_language" to extractionLanguage,
                 "translate_enabled" to translateEnabled.toString(),
-                "translate_target" to translateTargetLanguage
+                "translate_target" to translateTargetLanguage,
+                "upscale_provider" to upscaleProvider,
+                "upscale_mode" to upscaleMode,
+                "upscale_benchmark" to upscaleBenchmark
             )
             val file = backupFile()
             file.writeText(com.videox.app.download.SettingsBackup.encode(values))
@@ -194,6 +227,24 @@ class DownloadRepository(
             values["translate_target"]?.let {
                 if (com.videox.app.download.ExtractionLanguage.isTranslationTarget(it)) {
                     translateTargetLanguage = it
+                    applied++
+                }
+            }
+            values["upscale_provider"]?.let {
+                if (it in setOf("auto", "cpu", "xnnpack", "nnapi", "webgpu")) {
+                    upscaleProvider = it
+                    applied++
+                }
+            }
+            values["upscale_mode"]?.let {
+                if (it == "battery" || it == "performance") {
+                    upscaleMode = it
+                    applied++
+                }
+            }
+            values["upscale_benchmark"]?.let {
+                if (it.isBlank() || com.videox.app.download.UpscaleMath.decodeBenchmark(it).isNotEmpty()) {
+                    upscaleBenchmark = it
                     applied++
                 }
             }
