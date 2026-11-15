@@ -59,7 +59,7 @@ import com.videox.app.ui.theme.VideoXWarningContainer
 import com.videox.app.ui.viewmodel.DownloaderViewModel
 
 @Composable
-fun HomeScreen(viewModel: DownloaderViewModel) {
+fun HomeScreen(viewModel: DownloaderViewModel, onUpscaleClick: () -> Unit) {
     val downloads by viewModel.downloads.collectAsState()
     val active = downloads.filter { it.isRunning }
     val info = viewModel.videoInfo
@@ -123,6 +123,34 @@ fun HomeScreen(viewModel: DownloaderViewModel) {
                         Text("Formats")
                     }
                 }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // AI upscaler entry (v2.15).
+        PremiumCard(modifier = Modifier.fillMaxWidth(), onClick = onUpscaleClick) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.Movie,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "AI Video Upscaler",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Enhance a video you already have — up to 1080p, 1440p or 4K — " +
+                        "with on-device AI. Nothing is uploaded.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
