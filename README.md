@@ -1,4 +1,4 @@
-# VideoX 2.15 — Android Video & Audio Downloader
+# VideoX 2.16 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
@@ -28,6 +28,10 @@ It also upscales videos you already have with on-device AI (v2.15).
 
 ## Features
 
+- **Tougher video probing (v2.16):** the upscaler now accepts videos
+  that do not report a frame rate — it falls back to the container's
+  own rate, measures the rate from frame timestamps, or assumes 30 fps
+  and says so, instead of refusing the video.
 - **AI video upscaler (v2.15):** enhance a video you already have — up to
   1080p, 1440p or 4K — with the Real-ESRGAN AI model running fully
   on the phone (ONNX Runtime, free, no account, no cloud). A benchmark
