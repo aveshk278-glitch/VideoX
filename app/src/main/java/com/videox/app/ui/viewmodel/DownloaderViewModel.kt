@@ -16,6 +16,8 @@ import com.videox.app.download.QualitySelector
 import com.videox.app.download.SpeechTranscriber
 import com.videox.app.download.SubtitleText
 import com.videox.app.download.Translator
+import com.videox.app.download.UpscaleEngine
+import com.videox.app.download.UpscaleMath
 import com.videox.app.download.YtDlpEngine
 import com.videox.app.download.YtDlpJson
 import com.videox.app.download.YtVideoInfo
@@ -99,6 +101,21 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     var translateTargetLanguage by mutableStateOf(repository.translateTargetLanguage)
         private set
+
+    // ---- v2.15 settings (AI video upscaler) ----
+
+    var upscaleMode by mutableStateOf(repository.upscaleMode)
+        private set
+
+    var upscaleProvider by mutableStateOf(repository.upscaleProvider)
+        private set
+
+    /** One-line summary of the stored on-device benchmark, or null when never run. */
+    val upscaleBenchmarkSummary: String?
+        get() = UpscaleMath.benchmarkSummary(
+            repository.upscaleBenchmark,
+            UpscaleEngine.Provider.PREFERENCE_ORDER
+        )
 
     /** Per-extraction language override from Home, or null = use the Settings default. */
     var extractionOverride by mutableStateOf<String?>(null)
@@ -358,6 +375,16 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun updateTranslateTargetLanguage(value: String) {
         translateTargetLanguage = if (ExtractionLanguage.isTranslationTarget(value)) value else "en"
         repository.translateTargetLanguage = translateTargetLanguage
+    }
+
+    fun updateUpscaleMode(value: String) {
+        upscaleMode = if (value == "battery") "battery" else "performance"
+        repository.upscaleMode = upscaleMode
+    }
+
+    fun updateUpscaleProvider(value: String) {
+        upscaleProvider = value.takeIf { it in setOf("auto", "cpu", "xnnpack", "nnapi", "webgpu") } ?: "auto"
+        repository.upscaleProvider = upscaleProvider
     }
 
     fun updateExtractionOverride(value: String?) {
