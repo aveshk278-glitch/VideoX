@@ -4,9 +4,11 @@ import android.content.Context
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import com.yausername.ffmpeg.FFmpeg
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -24,6 +26,29 @@ import kotlinx.coroutines.withContext
 class FFmpegRunner(context: Context) {
 
     private val appContext = context.applicationContext
+
+    companion object {
+        /** FFmpeg.init() runs at most once per process, from whichever entry point gets there first. */
+        private val initAttempted = AtomicBoolean(false)
+    }
+
+    /**
+     * Make sure the FFmpeg shared libraries are extracted before any
+     * binary is executed. YtDlpEngine.init() normally does this at app
+     * start, but probing must not depend on that having succeeded, so
+     * this runs the same init itself when the libraries are missing.
+     * A failed init never throws here: the later steps report honestly
+     * when a binary cannot start.
+     */
+    private fun ensureInit() {
+        if (!initAttempted.compareAndSet(false, true)) return
+        try {
+            if (File(resolveLibDir(), "libavcodec.so.61").exists()) return
+            FFmpeg.getInstance().init(appContext)
+        } catch (_: Exception) {
+            // Reported honestly by the step that needs the binary.
+        }
+    }
 
     private val ffmpegBinary: File by lazy {
         File(appContext.applicationInfo.nativeLibraryDir, "libffmpeg.so")
@@ -97,6 +122,7 @@ class FFmpegRunner(context: Context) {
 
     /** True when the ffmpeg binary starts and reports its version. */
     suspend fun verifyBinary(): Boolean {
+        ensureInit()
         return try {
             val (code, out) = runCapture(listOf(ffmpegBinary.absolutePath, "-version"), 15_000)
             code == 0 && out.contains("ffmpeg version", ignoreCase = true)
@@ -107,22 +133,30 @@ class FFmpegRunner(context: Context) {
 
     /** Probe resolution, frame rate, duration and audio presence. */
     suspend fun probeVideo(file: File): UpscaleMath.ProbeResult {
+        ensureInit()
+        var ffprobeDetail: String? = null
         val probed = try {
             val (videoCode, videoOut) =
                 runCapture(UpscaleMath.probeVideoArgs(ffprobeBinary.absolutePath, file.absolutePath))
             val (_, audioOut) =
                 runCapture(UpscaleMath.probeAudioArgs(ffprobeBinary.absolutePath, file.absolutePath))
+            ffprobeDetail = "ffprobe exit code $videoCode, output: ${videoOut.trim().take(200)}"
             if (videoCode == 0) {
                 UpscaleMath.parseProbeCsv(videoOut.trim().lineSequence().firstOrNull().orEmpty(), audioOut.trim())
             } else {
                 null
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            ffprobeDetail = "ffprobe could not run (${e.message})"
             null
         }
         if (probed != null) return probed
         return probeVideoFallback(file)
-            ?: throw IOException("Could not read this video's resolution or frame rate, so it cannot be upscaled.")
+            ?: throw IOException(
+                "Could not read this video's resolution or frame rate, so it cannot be upscaled. " +
+                    "The Android fallback could not determine the width, height or frame rate. " +
+                    (ffprobeDetail?.let { "ffprobe detail: $it" } ?: "ffprobe did not run.")
+            )
     }
 
     /** Android-API fallback when ffprobe cannot read the file. */
@@ -136,26 +170,17 @@ class FFmpegRunner(context: Context) {
                 val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
                 val hasAudio = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
                 if (width == null || height == null || width <= 0 || height <= 0) return null
-                var fps: Double? = null
-                val extractor = MediaExtractor()
-                try {
-                    extractor.setDataSource(file.absolutePath)
-                    for (i in 0 until extractor.trackCount) {
-                        val format = extractor.getTrackFormat(i)
-                        val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                        if (mime.startsWith("video/") && format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                            fps = format.getFloat(MediaFormat.KEY_FRAME_RATE).toDouble()
-                            break
-                        }
-                    }
-                } finally {
-                    extractor.release()
+                val durationSec = (durationMs ?: 0L) / 1000.0
+                val fps = fallbackFrameRate(file)
+                if (fps != null) {
+                    UpscaleMath.ProbeResult(width, height, fps, durationSec, hasAudio)
+                } else if (durationMs != null && durationMs > 0) {
+                    // Width, height and duration read fine but no frame
+                    // rate anywhere: assume 30 fps and say so honestly.
+                    UpscaleMath.ProbeResult(width, height, 30.0, durationSec, hasAudio, fpsEstimated = true)
+                } else {
+                    null
                 }
-                val rate = fps?.takeIf { it > 0.0 } ?: return null
-                UpscaleMath.ProbeResult(
-                    width, height, rate,
-                    (durationMs ?: 0L) / 1000.0, hasAudio
-                )
             } finally {
                 retriever.release()
             }
@@ -164,8 +189,56 @@ class FFmpegRunner(context: Context) {
         }
     }
 
+    /**
+     * Frame rate from the Android APIs: the track's declared rate when
+     * present, otherwise measured from sample timestamps (many phone
+     * and messenger videos do not declare a rate at all). Returns null
+     * when neither source yields a sane rate.
+     */
+    private fun fallbackFrameRate(file: File): Double? {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(file.absolutePath)
+            var videoTrack = -1
+            var declaredFps: Double? = null
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+                if (!mime.startsWith("video/")) continue
+                videoTrack = i
+                if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                    declaredFps = format.getFloat(MediaFormat.KEY_FRAME_RATE).toDouble()
+                }
+                break
+            }
+            declaredFps?.takeIf { it in 1.0..240.0 }?.let { return it }
+            if (videoTrack < 0) return null
+            extractor.selectTrack(videoTrack)
+            var count = 0
+            var firstUs = -1L
+            var lastUs = -1L
+            while (count < 1000) {
+                val timeUs = extractor.getSampleTime()
+                if (timeUs < 0) break
+                if (firstUs < 0) firstUs = timeUs
+                lastUs = timeUs
+                count++
+                if (!extractor.advance()) break
+            }
+            if (count < 10) return null
+            val spanUs = lastUs - firstUs
+            if (spanUs <= 0) return null
+            ((count - 1) * 1_000_000.0 / spanUs).takeIf { it in 1.0..240.0 }
+        } catch (_: Exception) {
+            null
+        } finally {
+            extractor.release()
+        }
+    }
+
     /** True when this FFmpeg build offers the hardware H.264 encoder. Probed once, then cached. */
     suspend fun hasHardwareEncoder(): Boolean {
+        ensureInit()
         cachedHardwareEncoder?.let { return it }
         val found = try {
             val (code, out) = runCapture(UpscaleMath.encodersArgs(ffmpegBinary.absolutePath))
