@@ -346,6 +346,55 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
         }
         Spacer(modifier = Modifier.height(20.dp))
 
+        // ---- AI upscaler ----
+        SectionHeader(
+            title = "AI upscaler",
+            subtitle = "On-device video enhancement. Nothing is uploaded, ever."
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        PremiumCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Upscaling runs entirely on this phone with the Real-ESRGAN AI model " +
+                        "(BSD-3-Clause, Copyright 2021 Xintao Wang) on ONNX Runtime (MIT licence). " +
+                        "The model downloads once on first use and is verified by checksum. " +
+                        "There is no cloud processing and no charge of any kind.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SegmentedControl(
+                    options = listOf("Performance", "Battery Saver"),
+                    selectedIndex = if (viewModel.upscaleMode == "battery") 1 else 0,
+                    onSelect = { viewModel.updateUpscaleMode(if (it == 1) "battery" else "performance") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                val providerOptions = listOf(
+                    "auto" to "Auto (benchmark winner)",
+                    "cpu" to "CPU",
+                    "xnnpack" to "XNNPACK",
+                    "nnapi" to "NNAPI",
+                    "webgpu" to "WebGPU (Vulkan)"
+                )
+                PremiumDropdown(
+                    label = "AI provider",
+                    selectedLabel = providerOptions.firstOrNull { it.first == viewModel.upscaleProvider }?.second
+                        ?: "Auto (benchmark winner)",
+                    options = providerOptions.map { it.second },
+                    onSelect = { viewModel.updateUpscaleProvider(providerOptions[it].first) }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = viewModel.upscaleBenchmarkSummary
+                        ?: "Benchmark not run yet. It runs on this phone from the upscaler screen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+
         // ---- Backup & restore ----
         SectionHeader(title = "Backup & restore")
         Spacer(modifier = Modifier.height(10.dp))
@@ -411,13 +460,13 @@ fun SettingsScreen(viewModel: DownloaderViewModel) {
                 SettingRow(
                     icon = Icons.Outlined.Info,
                     title = "About VideoX",
-                    description = "Version 2.14  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)"
+                    description = "Version 2.15  •  Kotlin + Jetpack Compose  •  Min. Android 10 (API 29)"
                 ) {
                     // No trailing control.
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "VideoX 2.14 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. New in 2.9: a warning before downloading on a metered connection, an optional proxy setting, subtitle embedding, chapter markers, settings backup and restore, and a cleaner Audio only screen. New in 2.10: video-to-text extraction — save a video's subtitles/captions as a clean .txt file without downloading the video, or transcribe the speech on your phone when the video has no subtitles, so text can be extracted from any video with spoken audio. New in 2.11: a premium redesign — new purple identity, floating cards, gradient actions and a floating bottom bar. Every feature works exactly as before. New in 2.14: original-language text extraction — Auto Detect finds the video's own language and saves its subtitles in that language (Devanagari stays Devanagari), speech transcription uses the voice model for the video's language, and an optional on-device translation saves a separate translated file. It does not bypass DRM, paywalls or logins, and never collects passwords.",
+                    "VideoX 2.15 downloads public video links with the yt-dlp engine (youtubedl-android 0.18.1 + FFmpeg) and direct media files (MP4, WebM, MOV, MKV, M4V, 3GP, MP3, M4A and more) with Android DownloadManager. Quality is chosen by resolution — Best Quality merges the highest video with the best audio — and is never silently downgraded: if the quality you picked is blocked, VideoX says why and offers the alternatives. If a file is already on your phone, VideoX says so instead of reporting a failure. Quality sizes are honest: when a size is unknown, no size is shown instead of a wrong one, and DNS failures are explained plainly. Every build is signed with the same key, so updates install over the previous version. The engine updates itself to the latest stable yt-dlp so YouTube downloads keep working. New in 2.9: a warning before downloading on a metered connection, an optional proxy setting, subtitle embedding, chapter markers, settings backup and restore, and a cleaner Audio only screen. New in 2.10: video-to-text extraction — save a video's subtitles/captions as a clean .txt file without downloading the video, or transcribe the speech on your phone when the video has no subtitles, so text can be extracted from any video with spoken audio. New in 2.11: a premium redesign — new purple identity, floating cards, gradient actions and a floating bottom bar. Every feature works exactly as before. New in 2.14: original-language text extraction — Auto Detect finds the video's own language and saves its subtitles in that language (Devanagari stays Devanagari), speech transcription uses the voice model for the video's language, and an optional on-device translation saves a separate translated file. New in 2.15: an AI video upscaler that runs fully on your phone — pick a video you already have, choose a target up to 4K, and the Real-ESRGAN model enhances every frame, with a benchmark that measures the fastest AI provider on your own phone. It does not bypass DRM, paywalls or logins, and never collects passwords.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
