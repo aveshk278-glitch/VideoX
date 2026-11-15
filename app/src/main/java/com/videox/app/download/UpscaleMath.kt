@@ -130,13 +130,19 @@ object UpscaleMath {
         val height: Int,
         val fps: Double,
         val durationSec: Double,
-        val hasAudio: Boolean
+        val hasAudio: Boolean,
+        /** True when the frame rate could not be read and 30 fps was assumed instead. */
+        val fpsEstimated: Boolean = false
     )
 
     /**
      * Parse ffprobe CSV output: [videoLine] is
-     * "width,height,avg_frame_rate,duration" from the first video
-     * stream; [audioLine] is non-blank when an audio stream exists.
+     * "width,height,avg_frame_rate,r_frame_rate,duration" from the
+     * first video stream; [audioLine] is non-blank when an audio
+     * stream exists. The frame rate prefers avg_frame_rate and falls
+     * back to r_frame_rate (some videos report "0/0" for the
+     * average). Any rate outside 1 to 240 fps is rejected:
+     * r_frame_rate is sometimes a bogus clock value such as 90000.
      * Returns null when the video line is unusable.
      */
     fun parseProbeCsv(videoLine: String, audioLine: String): ProbeResult? {
@@ -145,10 +151,16 @@ object UpscaleMath {
         val width = parts[0].trim().toIntOrNull() ?: return null
         val height = parts[1].trim().toIntOrNull() ?: return null
         if (width <= 0 || height <= 0) return null
-        val fps = parseFrameRate(parts[2]) ?: return null
-        val duration = parts.getOrNull(3)?.trim()?.toDoubleOrNull() ?: 0.0
+        val fps = saneFrameRate(parts[2])
+            ?: parts.getOrNull(3)?.let { saneFrameRate(it) }
+            ?: return null
+        val duration = parts.getOrNull(4)?.trim()?.toDoubleOrNull() ?: 0.0
         return ProbeResult(width, height, fps, duration.coerceAtLeast(0.0), audioLine.isNotBlank())
     }
+
+    /** A parsed frame rate is only trusted inside 1 to 240 fps. */
+    private fun saneFrameRate(text: String): Double? =
+        parseFrameRate(text)?.takeIf { it in 1.0..240.0 }
 
     /** Estimated frame count from probe data (used for progress only). */
     fun estimatedFrames(durationSec: Double, fps: Double): Int =
@@ -166,7 +178,7 @@ object UpscaleMath {
     fun probeVideoArgs(ffprobeBinary: String, inputPath: String): List<String> = listOf(
         ffprobeBinary, "-v", "error",
         "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,avg_frame_rate,duration",
+        "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate,duration",
         "-of", "csv=p=0",
         inputPath
     )
