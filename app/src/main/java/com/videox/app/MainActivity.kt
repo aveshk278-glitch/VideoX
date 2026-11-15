@@ -34,10 +34,12 @@ import androidx.navigation.compose.rememberNavController
 import com.videox.app.ui.screens.DownloadsScreen
 import com.videox.app.ui.screens.HomeScreen
 import com.videox.app.ui.screens.SettingsScreen
+import com.videox.app.ui.screens.UpscalerScreen
 import com.videox.app.ui.theme.BottomBarItem
 import com.videox.app.ui.theme.PremiumBottomBar
 import com.videox.app.ui.theme.VideoXTheme
 import com.videox.app.ui.viewmodel.DownloaderViewModel
+import com.videox.app.ui.viewmodel.UpscalerViewModel
 
 sealed class Screen(
     val route: String,
@@ -67,6 +69,7 @@ class MainActivity : ComponentActivity() {
 
         val factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
         val viewModel = ViewModelProvider(this, factory)[DownloaderViewModel::class.java]
+        val upscalerViewModel = ViewModelProvider(this, factory)[UpscalerViewModel::class.java]
 
         // If another app shared a text link, pre-fill it on Home.
         val sharedText = if (intent?.action == Intent.ACTION_SEND) {
@@ -79,14 +82,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             VideoXTheme(darkTheme = viewModel.darkTheme) {
-                VideoXApp(viewModel)
+                VideoXApp(viewModel, upscalerViewModel)
             }
         }
     }
 }
 
 @Composable
-fun VideoXApp(viewModel: DownloaderViewModel) {
+fun VideoXApp(viewModel: DownloaderViewModel, upscalerViewModel: UpscalerViewModel) {
     val navController = rememberNavController()
     val items = listOf(Screen.Home, Screen.Downloads, Screen.Settings)
     var selectedRoute by remember { mutableStateOf(Screen.Home.route) }
@@ -116,9 +119,14 @@ fun VideoXApp(viewModel: DownloaderViewModel) {
             startDestination = Screen.Home.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Home.route) { HomeScreen(viewModel) }
+            composable(Screen.Home.route) {
+                HomeScreen(viewModel, onUpscaleClick = { navController.navigate("upscaler") })
+            }
             composable(Screen.Downloads.route) { DownloadsScreen(viewModel) }
             composable(Screen.Settings.route) { SettingsScreen(viewModel) }
+            composable("upscaler") {
+                UpscalerScreen(upscalerViewModel, onBack = { navController.popBackStack() })
+            }
         }
     }
 }
