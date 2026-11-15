@@ -13,8 +13,8 @@ android {
         applicationId = "com.videox.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.14"
+        versionCode = 17
+        versionName = "2.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -116,6 +116,11 @@ dependencies {
     // Standalone ML Kit SDK — free, no API key, no account, no cloud
     // service; models download to the phone via Play Services.
     implementation("com.google.mlkit:translate:17.0.3")
+
+    // v2.15: on-device AI video upscaling (ONNX Runtime, MIT licence,
+    // free, no API key, no account, no cloud service). The Real-ESRGAN
+    // model downloads once on first use and is verified by checksum.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
