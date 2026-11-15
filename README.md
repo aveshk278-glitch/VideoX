@@ -1,10 +1,11 @@
-# VideoX 2.13 — Android Video & Audio Downloader
+# VideoX 2.15 — Android Video & Audio Downloader
 
 VideoX is a native Android app built with **Kotlin + Jetpack Compose + Material 3**,
 inspired by the Seal app's workflow.
 It downloads supported-site links with the **yt-dlp engine**
 (`youtubedl-android` 0.18.1 + FFmpeg, the library Seal uses), and **direct
 video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
+It also upscales videos you already have with on-device AI (v2.15).
 
 - **App name:** VideoX
 - **Package:** `com.videox.app`
@@ -12,7 +13,7 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 - **Target / Compile SDK:** 34
 - **Language:** Kotlin 2.0.20, AGP 8.5.2, Gradle 8.7, Java 17
 - **Download folder:** `Downloads/VideoX` on the phone
-- **APK size:** about 109 MB (arm64) — yt-dlp bundles Python + FFmpeg + native libraries.
+- **APK size:** about 160 MB (arm64) — yt-dlp bundles Python + FFmpeg + native libraries, and v2.15 adds the ONNX Runtime AI engine.
 
 > **Important — what VideoX does and does not do**
 >
@@ -27,6 +28,20 @@ video file links** (MP4, WebM, MOV, M4V, 3GP) with Android `DownloadManager`.
 
 ## Features
 
+- **AI video upscaler (v2.15):** enhance a video you already have — up to
+  1080p, 1440p or 4K — with the Real-ESRGAN AI model running fully
+  on the phone (ONNX Runtime, free, no account, no cloud). A benchmark
+  measures the fastest AI provider (CPU, XNNPACK, NNAPI, WebGPU) on
+  your own phone and picks the winner; thermal throttling and low
+  memory pause the job safely; the finished file's resolution is
+  verified before it is saved. The model downloads once on first use
+  and is verified by checksum. See THIRD_PARTY_NOTICES.md for licences.
+- **Original-language text extraction (v2.14):** Auto Detect finds the
+  video's own language and saves its subtitles in that language
+  (Devanagari stays Devanagari), speech transcription uses the voice
+  model for the video's language, and an optional on-device
+  translation saves a separate translated file. Text is never
+  auto-translated or transliterated.
 - **Honest error messages (v2.13):** a download failure now reports the
   error that actually stopped it. yt-dlp prints an impersonation
   warning even when the real failure is a timeout or an unreachable
